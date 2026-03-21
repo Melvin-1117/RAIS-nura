@@ -1,0 +1,46 @@
+# Python
+.venv/
+venv/
+backend/.venv/
+backend/__pycache__/
+backend/**/*.pyc
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
+backend/.coverage
+backend/coverage.xml
+backend/htmlcov/
+
+# Node / Expo
+frontend/node_modules/
+frontend/.expo/
+frontend/dist/
+frontend/web-build/
+frontend/.expo-shared/
+frontend/.npm/
+frontend/.yarn/
+frontend/.parcel-cache/
+frontend/.next/
+
+# Environment
+backend/.env
+frontend/.env
+frontend/.env.*
+*.env.local
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# General caches/temp
+.cache/
+tmp/
+temp/
