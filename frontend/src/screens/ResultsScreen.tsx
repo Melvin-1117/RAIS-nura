@@ -2,11 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { IntensityBar } from '../components/IntensityBar';
-import { SoundCategoryCard } from '../components/SoundCategoryCard';
+import { SoundCategoryList } from '../components/SoundCategoryList';
 import { SpeakerTimeline } from '../components/SpeakerTimeline';
 import { TranscriptBubble } from '../components/TranscriptBubble';
 import { speakerPalette, theme } from '../constants/theme';
 import { DiarizationResponse } from '../types/diarization';
+import { ALL_CATEGORIES, CategorizedSoundEvents, SoundCategory } from '../types/soundCategories';
 
 type ResultsScreenProps = {
   result: DiarizationResponse;
@@ -116,15 +117,24 @@ export const ResultsScreen = ({
     });
   }, [result.processing.duration_seconds, result.segments, speakerMatchByLabel]);
 
-  const soundsByCategory = useMemo(() => {
-    const grouped: Record<string, typeof result.sounds> = {};
-    for (const event of result.sounds) {
-      if (!grouped[event.category]) {
-        grouped[event.category] = [];
-      }
-      grouped[event.category].push(event);
+  const categorizedSounds = useMemo((): CategorizedSoundEvents => {
+    const byCategory = {} as Record<SoundCategory, CategorizedSoundEvents['frames']>;
+    for (const cat of ALL_CATEGORIES) {
+      byCategory[cat] = [];
     }
-    return grouped;
+    for (const event of result.sounds) {
+      const cat = (event.category as SoundCategory) || 'Artificial';
+      if (byCategory[cat]) {
+        byCategory[cat].push({
+          label: event.label,
+          score: event.confidence,
+          startSec: event.start,
+          endSec: event.end,
+          category: cat,
+        });
+      }
+    }
+    return { frames: [], byCategory, summary: [] };
   }, [result.sounds]);
 
   const processingMode = useMemo(() => {
@@ -141,6 +151,9 @@ export const ResultsScreen = ({
       diarizationRan,
     };
   }, [result.processing.transcript_mode]);
+
+  const overallIntensity = result.processing.overall_intensity ?? 'Low';
+  const overallRmsLabel = (result.processing.overall_energy_rms ?? 0).toFixed(4);
 
   return (
     <View style={styles.container}>
@@ -287,32 +300,17 @@ export const ResultsScreen = ({
               </Text>
             </View>
 
-            {Object.entries(soundsByCategory).length === 0 ? (
-              <View style={styles.empty}><Text style={styles.emptyText}>No background events detected.</Text></View>
-            ) : (
-              Object.entries(soundsByCategory).map(([category, items]) => (
-                <SoundCategoryCard
-                  key={category}
-                  category={category}
-                  items={items.map((item) => ({
-                    label: item.label,
-                    distance: item.distance,
-                    intensity: item.intensity,
-                    confidence: item.confidence,
-                  }))}
-                />
-              ))
-            )}
+            <SoundCategoryList
+              soundEvents={categorizedSounds}
+              isLoading={false}
+            />
 
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Intensity Overview</Text>
-              {result.sounds.slice(0, 6).map((event, index) => (
-                <IntensityBar
-                  key={`${event.label}-${event.start}-${index}`}
-                  label={`${event.label} (${event.category})`}
-                  intensity={event.intensity}
-                />
-              ))}
+              <IntensityBar
+                label={`Overall Audio (RMS ${overallRmsLabel})`}
+                intensity={overallIntensity}
+              />
             </View>
           </View>
         )}

@@ -40,6 +40,8 @@ export type ProcessingMeta = {
   separation_confirmed?: boolean;
   speech_energy_ratio?: number;
   background_energy_ratio?: number;
+  overall_energy_rms?: number;
+  overall_intensity?: 'Low' | 'Medium' | 'High';
 };
 
 export type DiarizationResponse = {

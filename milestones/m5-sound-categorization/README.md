@@ -11,13 +11,14 @@ Categorize background sound events into domain groups.
 - Animal
 
 ## Current Implementation Mapping
-- Sound event shaping: `backend/app/services/diarization_service.py`
-- UI cards: `frontend/src/components/SoundCategoryCard.tsx`
+- Model-based event classification and category mapping: backend/separation/app/pipeline.py
+- Sounds grouping and rendering: frontend/src/screens/ResultsScreen.tsx
+- UI cards: frontend/src/components/SoundCategoryCard.tsx
 
 ## Acceptance Checklist
-- [ ] Event labels include timestamps
-- [ ] Every event has one valid category
-- [ ] Results grouped by category in UI
+- [x] Event labels include timestamps
+- [x] Every event has one valid category
+- [x] Results grouped by category in UI
 
 ## Status
-- Partial. Heuristic categories implemented; model-based classification pending.
+- Completed. Model-based YAMNet classification is active in the M4 separation pipeline and surfaced in grouped M5 UI cards.

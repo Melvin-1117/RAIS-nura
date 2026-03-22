@@ -38,6 +38,8 @@ class ProcessingMetaOut(BaseModel):
     separation_confirmed: bool = False
     speech_energy_ratio: float = 0.0
     background_energy_ratio: float = 0.0
+    overall_energy_rms: float = 0.0
+    overall_intensity: str = "Low"
 
 
 class SpeakerMatchOut(BaseModel):

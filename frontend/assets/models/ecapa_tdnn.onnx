@@ -1,0 +1,3 @@
+PLACEHOLDER MODEL FILE
+Replace this file with a valid SpeechBrain ECAPA-TDNN ONNX model.
+Expected path: assets/models/ecapa_tdnn.onnx

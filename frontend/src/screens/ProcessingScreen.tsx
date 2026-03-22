@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { SeparationStatusCard } from '../components/SeparationStatusCard';
 import { theme } from '../constants/theme';
 import { diarizeAudioFile } from '../services/api';
+import { useSeparationStore } from '../store/separationStore';
 import { AppSettings, PickedAudio } from '../types/app';
 import { DiarizationResponse } from '../types/diarization';
+import { SeparationResult } from '../types/separation';
 
 type ProcessingScreenProps = {
   audio: PickedAudio;
@@ -14,6 +17,7 @@ type ProcessingScreenProps = {
 };
 
 const milestones = [
+  { key: 'M4', label: 'Background Segregation' },
   { key: 'M1', label: 'Speaker Count' },
   { key: 'M2', label: 'Transcript' },
 ];
@@ -23,31 +27,100 @@ export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: Proces
   const [activeIndex, setActiveIndex] = useState(0);
   const [isRunning, setIsRunning] = useState(true);
   const progressAnim = useRef(new Animated.Value(0)).current;
+  const {
+    status: separationStatus,
+    progress: separationProgress,
+    stage: separationStage,
+    result: separationResult,
+    runSeparation,
+    reset: resetSeparation,
+  } = useSeparationStore();
+
+  useEffect(() => {
+    if (separationStatus === 'queued' || separationStatus === 'running') {
+      const m4Progress = Math.max(4, Math.min(60, Math.round(separationProgress * 0.6)));
+      setActiveIndex(0);
+      setProgress((prev) => Math.max(prev, m4Progress));
+      Animated.timing(progressAnim, { toValue: m4Progress, duration: 250, useNativeDriver: false }).start();
+      return;
+    }
+
+    if (separationStatus === 'completed') {
+      setActiveIndex(1);
+      setProgress((prev) => Math.max(prev, 60));
+      Animated.timing(progressAnim, { toValue: 60, duration: 250, useNativeDriver: false }).start();
+    }
+  }, [progressAnim, separationProgress, separationStatus]);
 
   useEffect(() => {
     let isMounted = true;
-    let timer: ReturnType<typeof setInterval> | null = null;
+    let diarizationTimer: ReturnType<typeof setInterval> | null = null;
 
     const run = async () => {
+      resetSeparation();
+
       try {
-        timer = setInterval(() => {
-          setProgress(prev => {
-            const next = prev < 88 ? prev + 8 : prev;
-            Animated.timing(progressAnim, { toValue: next, duration: 400, useNativeDriver: false }).start();
+        let m4Result: SeparationResult | null = null;
+        try {
+          m4Result = await runSeparation(audio.uri, audio.name, audio.mimeType, settings.apiBaseUrl);
+        } catch {
+          m4Result = null;
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setActiveIndex(1);
+        diarizationTimer = setInterval(() => {
+          setProgress((prev) => {
+            const next = prev < 95 ? prev + 4 : prev;
+            Animated.timing(progressAnim, { toValue: next, duration: 300, useNativeDriver: false }).start();
             return next;
           });
-          setActiveIndex(prev => prev < milestones.length - 1 ? prev + 1 : prev);
-        }, 700);
+          setActiveIndex((prev) => (prev < milestones.length - 1 ? prev + 1 : prev));
+        }, 500);
 
-        const result = await diarizeAudioFile(audio.uri, audio.name, audio.mimeType, settings.apiBaseUrl);
-        if (timer) clearInterval(timer);
+        const diarizationInputUri =
+          Platform.OS === 'web' && m4Result?.vocals_url
+            ? m4Result.vocals_url
+            : audio.uri;
+
+        const diarizationMimeType =
+          Platform.OS === 'web' && m4Result?.vocals_url
+            ? 'audio/wav'
+            : audio.mimeType;
+
+        const result = await diarizeAudioFile(
+          diarizationInputUri,
+          audio.name,
+          diarizationMimeType,
+          settings.apiBaseUrl
+        );
+
+        if (diarizationTimer) clearInterval(diarizationTimer);
         if (!isMounted) return;
+
+        const mergedResult: DiarizationResponse = m4Result
+          ? {
+              ...result,
+              sounds: m4Result.sounds?.length ? m4Result.sounds : result.sounds,
+              processing: {
+                ...result.processing,
+                separation_confirmed: true,
+                speech_energy_ratio:
+                  m4Result.processing.speech_energy_ratio ?? result.processing.speech_energy_ratio ?? 0,
+                background_energy_ratio:
+                  m4Result.processing.background_energy_ratio ?? result.processing.background_energy_ratio ?? 0,
+              },
+            }
+          : result;
 
         setProgress(100);
         Animated.timing(progressAnim, { toValue: 100, duration: 300, useNativeDriver: false }).start();
-        setTimeout(() => onComplete(result), 350);
+        setTimeout(() => onComplete(mergedResult), 350);
       } catch (error: any) {
-        if (timer) clearInterval(timer);
+        if (diarizationTimer) clearInterval(diarizationTimer);
         if (!isMounted) return;
         setIsRunning(false);
         const rawMessage = error?.response?.data?.detail ?? error?.message ?? 'Request failed';
@@ -60,8 +133,20 @@ export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: Proces
     };
 
     run();
-    return () => { isMounted = false; if (timer) clearInterval(timer); };
-  }, [audio.mimeType, audio.name, audio.uri, onComplete, settings.apiBaseUrl, progressAnim]);
+    return () => {
+      isMounted = false;
+      if (diarizationTimer) clearInterval(diarizationTimer);
+    };
+  }, [
+    audio.mimeType,
+    audio.name,
+    audio.uri,
+    onComplete,
+    progressAnim,
+    resetSeparation,
+    runSeparation,
+    settings.apiBaseUrl,
+  ]);
 
   const animatedWidth = progressAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] });
   const activeMilestone = useMemo(() => milestones[activeIndex], [activeIndex]);
@@ -120,6 +205,14 @@ export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: Proces
               );
             })}
           </View>
+
+          <SeparationStatusCard
+            status={separationStatus}
+            progress={separationProgress}
+            stage={separationStage}
+            vocalsReady={Boolean(separationResult?.vocals_url)}
+            backgroundReady={Boolean(separationResult?.background_url)}
+          />
         </View>
       </View>
     </View>

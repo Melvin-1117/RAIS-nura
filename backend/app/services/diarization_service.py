@@ -178,6 +178,8 @@ def _preprocess_audio_to_wav_16k_mono(input_path: str) -> Dict:
 
     torchaudio.save(temp_wav.name, waveform, settings.target_sample_rate)
     duration_seconds = float(waveform.shape[1]) / float(settings.target_sample_rate)
+    overall_energy_rms = float(torch.sqrt(torch.mean(torch.square(waveform)))) if waveform.numel() else 0.0
+    overall_intensity = _energy_to_intensity(overall_energy_rms)
     del waveform
     gc.collect()
 
@@ -186,6 +188,8 @@ def _preprocess_audio_to_wav_16k_mono(input_path: str) -> Dict:
         "duration_seconds": round(duration_seconds, 2),
         "source_sample_rate": sample_rate,
         "output_sample_rate": settings.target_sample_rate,
+        "overall_energy_rms": round(overall_energy_rms, 4),
+        "overall_intensity": overall_intensity,
     }
 
 
@@ -241,18 +245,22 @@ def _separate_speech_and_background(processed_path: str) -> Dict[str, Any]:
 
 
 def _classify_sound_event(rms: float, centroid: float, zcr: float, duration: float) -> Dict[str, str]:
-    # YAMNet-like coarse decision heuristics for hackathon deployment.
+    from app.services.sound_categorizer import get_category
+
+    # Acoustic heuristics determine label; category is resolved via YAMNet map.
     if duration < 0.45 and rms > 0.16:
-        return {"label": "cough", "category": "Human Activity"}
-    if centroid > 2200 and zcr > 0.12:
-        return {"label": "bird chirp", "category": "Animal"}
-    if 900 <= centroid <= 2600 and rms > 0.09:
-        return {"label": "music", "category": "Music"}
-    if centroid < 500 and zcr < 0.05:
-        return {"label": "fan hum", "category": "Artificial"}
-    if zcr > 0.1 and rms < 0.12:
-        return {"label": "rain", "category": "Natural"}
-    return {"label": "ambient noise", "category": "Artificial"}
+        label = "cough"
+    elif centroid > 2200 and zcr > 0.12:
+        label = "bird chirp"
+    elif 900 <= centroid <= 2600 and rms > 0.09:
+        label = "music"
+    elif centroid < 500 and zcr < 0.05:
+        label = "fan hum"
+    elif zcr > 0.1 and rms < 0.12:
+        label = "rain"
+    else:
+        label = "ambient noise"
+    return {"label": label, "category": get_category(label)}
 
 
 def _estimate_reverb_tail(envelope: torch.Tensor) -> float:
@@ -769,6 +777,8 @@ def _build_whisper_only_result(
             "source_sample_rate": processed_audio["source_sample_rate"],
             "output_sample_rate": processed_audio["output_sample_rate"],
             "transcript_mode": transcript_mode,
+            "overall_energy_rms": processed_audio["overall_energy_rms"],
+            "overall_intensity": processed_audio["overall_intensity"],
         },
     }
 
@@ -826,6 +836,8 @@ def _build_no_diarization_placeholder_result(
             "source_sample_rate": processed_audio["source_sample_rate"],
             "output_sample_rate": processed_audio["output_sample_rate"],
             "transcript_mode": transcript_mode,
+            "overall_energy_rms": processed_audio["overall_energy_rms"],
+            "overall_intensity": processed_audio["overall_intensity"],
         },
     }
 
@@ -1039,6 +1051,8 @@ def _build_assemblyai_transcript_only_result(
             "source_sample_rate": processed_audio["source_sample_rate"],
             "output_sample_rate": processed_audio["output_sample_rate"],
             "transcript_mode": "assemblyai_transcript_only_m1_m2",
+            "overall_energy_rms": processed_audio["overall_energy_rms"],
+            "overall_intensity": processed_audio["overall_intensity"],
         },
     }
 
@@ -1046,6 +1060,7 @@ def _build_assemblyai_transcript_only_result(
 def diarize_file(input_path: str) -> Dict:
     processed_audio = _preprocess_audio_to_wav_16k_mono(input_path)
     processed_path = processed_audio["path"]
+    m2_audio_path = processed_path
     separation_meta: Dict[str, Any] = {
         "separation_confirmed": False,
         "speech_energy_ratio": 0.0,
@@ -1072,16 +1087,18 @@ def diarize_file(input_path: str) -> Dict:
             try:
                 separation_meta = _separate_speech_and_background(processed_path)
                 separation_meta["separation_confirmed"] = True
+                m2_audio_path = str(separation_meta.get("speech_path") or processed_path)
                 sound_events = _build_sound_events(
                     separation_meta["background_path"],
                     float(processed_audio["duration_seconds"]),
                 )
             except Exception:
                 separation_meta["separation_confirmed"] = False
+                m2_audio_path = processed_path
 
         if settings.assemblyai_api_key:
             try:
-                assemblyai_utterances = _transcribe_with_assemblyai(processed_path)
+                assemblyai_utterances = _transcribe_with_assemblyai(m2_audio_path)
                 if not _is_useful_assemblyai_result(assemblyai_utterances):
                     raise RuntimeError("AssemblyAI returned low-quality or empty utterances")
 
@@ -1112,6 +1129,8 @@ def diarize_file(input_path: str) -> Dict:
                             "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
                             "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
                             "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
+                            "overall_energy_rms": processed_audio["overall_energy_rms"],
+                            "overall_intensity": processed_audio["overall_intensity"],
                         },
                     })
             except Exception as exc:
@@ -1119,7 +1138,7 @@ def diarize_file(input_path: str) -> Dict:
                 print(f"[AssemblyAI ERROR] {assemblyai_error}")
                 try:
                     assemblyai_transcript_only_payload = _transcribe_with_assemblyai_payload(
-                        processed_path,
+                        m2_audio_path,
                         speaker_labels=False,
                     )
                 except Exception as fallback_exc:
@@ -1127,7 +1146,7 @@ def diarize_file(input_path: str) -> Dict:
 
         if allow_whisper_fallback and settings.whisper_api_key:
             try:
-                whisper_payload = _transcribe_with_whisper(processed_path)
+                whisper_payload = _transcribe_with_whisper(m2_audio_path)
                 whisper_segments = whisper_payload.get("segments") or []
                 whisper_text = str(whisper_payload.get("text") or "").strip()
             except Exception as exc:
@@ -1147,7 +1166,7 @@ def diarize_file(input_path: str) -> Dict:
         if should_try_local:
             try:
                 local_whisper_segments = _transcribe_with_local_whisper(
-                    processed_path,
+                    m2_audio_path,
                     float(processed_audio["duration_seconds"]),
                 )
             except Exception as exc:
@@ -1155,7 +1174,7 @@ def diarize_file(input_path: str) -> Dict:
 
         try:
             pipeline = _get_pipeline()
-            diarization = pipeline(processed_path)
+            diarization = pipeline(m2_audio_path)
             speaker_name_map: Dict[str, str] = {}
 
             for turn, _, raw_speaker in diarization.itertracks(yield_label=True):
@@ -1177,7 +1196,7 @@ def diarize_file(input_path: str) -> Dict:
             try:
                 speaker_match_map = match_speakers(
                     diarized_segments,
-                    processed_path,
+                    m2_audio_path,
                     confidence_threshold=0.85,
                 )
             except Exception:
@@ -1305,6 +1324,8 @@ def diarize_file(input_path: str) -> Dict:
                 "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
                 "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
                 "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
+                "overall_energy_rms": processed_audio["overall_energy_rms"],
+                "overall_intensity": processed_audio["overall_intensity"],
             },
         })
 
@@ -1333,6 +1354,8 @@ def diarize_file(input_path: str) -> Dict:
                 "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
                 "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
                 "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
+                "overall_energy_rms": processed_audio["overall_energy_rms"],
+                "overall_intensity": processed_audio["overall_intensity"],
             },
         })
 
