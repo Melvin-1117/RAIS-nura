@@ -1,19 +1,22 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AudioModule, RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, type AudioRecorder } from 'expo-audio';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, FlatList, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { storageKeys } from '../constants/storage';
 import { theme } from '../constants/theme';
+import { deleteSpeakerProfile, listSpeakerProfiles, registerSpeakerProfile } from '../services/api';
 import { SpeakerProfile } from '../types/profiles';
 
-type SpeakerProfilesScreenProps = { onBack: () => void };
+type SpeakerProfilesScreenProps = {
+  apiBaseUrl: string;
+  onBack: () => void;
+};
 
-export const SpeakerProfilesScreen = ({ onBack }: SpeakerProfilesScreenProps) => {
+export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScreenProps) => {
   const [profiles, setProfiles] = useState<SpeakerProfile[]>([]);
   const [newName, setNewName] = useState('');
   const [recording, setRecording] = useState<AudioRecorder | null>(null);
   const [sampleUri, setSampleUri] = useState('');
+  const [loading, setLoading] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -29,22 +32,32 @@ export const SpeakerProfilesScreen = ({ onBack }: SpeakerProfilesScreenProps) =>
 
   useEffect(() => {
     const load = async () => {
-      const raw = await AsyncStorage.getItem(storageKeys.speakerProfiles);
-      if (raw) setProfiles(JSON.parse(raw));
+      setLoading(true);
+      try {
+        const items = await listSpeakerProfiles(apiBaseUrl);
+        setProfiles(items);
+      } catch (error: any) {
+        Alert.alert('Failed to load profiles', String(error?.message ?? error));
+      } finally {
+        setLoading(false);
+      }
     };
     load();
-  }, []);
-
-  const persist = async (items: SpeakerProfile[]) => {
-    setProfiles(items);
-    await AsyncStorage.setItem(storageKeys.speakerProfiles, JSON.stringify(items));
-  };
+  }, [apiBaseUrl]);
 
   const startRecording = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Recording is not supported on web in this build. Upload a mobile sample instead.');
+      return;
+    }
+
     const perm = await requestRecordingPermissionsAsync();
     if (!perm.granted) { Alert.alert('Microphone permission required.'); return; }
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-    const rec = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
+    const audioModuleAny = AudioModule as any;
+    const rec: AudioRecorder = audioModuleAny?.createAudioRecorder
+      ? audioModuleAny.createAudioRecorder(RecordingPresets.HIGH_QUALITY)
+      : new audioModuleAny.AudioRecorder(RecordingPresets.HIGH_QUALITY);
     await rec.prepareToRecordAsync();
     rec.record();
     setRecording(rec);
@@ -61,16 +74,37 @@ export const SpeakerProfilesScreen = ({ onBack }: SpeakerProfilesScreenProps) =>
   const addProfile = async () => {
     if (!newName.trim()) { Alert.alert('Enter speaker name first.'); return; }
     if (!sampleUri) { Alert.alert('Record a voice sample first.'); return; }
-    const profile: SpeakerProfile = {
-      id: `${Date.now()}`, name: newName.trim(),
-      sampleUri, createdAt: new Date().toISOString(),
-    };
-    await persist([profile, ...profiles]);
-    setNewName(''); setSampleUri('');
+
+    setLoading(true);
+    try {
+      const profile = await registerSpeakerProfile(
+        apiBaseUrl,
+        newName.trim(),
+        sampleUri,
+        sampleUri.endsWith('.m4a') ? `speaker-${Date.now()}.m4a` : `speaker-${Date.now()}.wav`,
+        sampleUri.endsWith('.m4a') ? 'audio/x-m4a' : 'audio/wav'
+      );
+      setProfiles((prev) => [profile, ...prev]);
+      setNewName('');
+      setSampleUri('');
+      Alert.alert('Speaker registered', `${profile.name} is ready for recognition.`);
+    } catch (error: any) {
+      Alert.alert('Failed to register profile', String(error?.message ?? error));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const deleteProfile = async (id: string) => {
-    await persist(profiles.filter((p) => p.id !== id));
+    setLoading(true);
+    try {
+      await deleteSpeakerProfile(apiBaseUrl, id);
+      setProfiles((prev) => prev.filter((p) => p.id !== id));
+    } catch (error: any) {
+      Alert.alert('Failed to delete profile', String(error?.message ?? error));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getInitials = (name: string) =>
@@ -155,7 +189,9 @@ export const SpeakerProfilesScreen = ({ onBack }: SpeakerProfilesScreenProps) =>
             </View>
             <View style={styles.profileInfo}>
               <Text style={styles.profileName}>{item.name}</Text>
-              <Text style={styles.profileMeta}>Added {new Date(item.createdAt).toLocaleDateString()}</Text>
+                <Text style={styles.profileMeta}>
+                  Added {new Date(item.created_at).toLocaleDateString()} · {item.sample_duration_seconds.toFixed(1)}s sample
+                </Text>
             </View>
             <Pressable
               onPress={() => deleteProfile(item.id)}
@@ -166,6 +202,12 @@ export const SpeakerProfilesScreen = ({ onBack }: SpeakerProfilesScreenProps) =>
           </View>
         )}
       />
+
+      {loading ? (
+        <View style={styles.loadingRow}>
+          <Text style={styles.loadingText}>Syncing profiles...</Text>
+        </View>
+      ) : null}
     </View>
   );
 };
@@ -275,4 +317,21 @@ const styles = StyleSheet.create({
     backgroundColor: `${theme.danger}10`,
   },
   deleteText: { color: theme.danger, fontSize: 12, fontWeight: '600' },
+
+  loadingRow: {
+    position: 'absolute',
+    bottom: 16,
+    alignSelf: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.card,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  loadingText: {
+    color: theme.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+  },
 });

@@ -1,7 +1,7 @@
 import { AudioModule, RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, type AudioRecorder } from 'expo-audio';
 import * as DocumentPicker from 'expo-document-picker';
 import React, { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { WaveformPlaceholder } from '../components/WaveformPlaceholder';
 import { theme } from '../constants/theme';
@@ -40,13 +40,21 @@ export const HomeScreen = ({
   };
 
   const startRecording = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Recording is not supported on web in this build. Please upload an audio file.');
+      return;
+    }
+
     const permission = await requestRecordingPermissionsAsync();
     if (!permission.granted) {
       Alert.alert('Microphone permission is required.');
       return;
     }
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-    const newRecording = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
+    const audioModuleAny = AudioModule as any;
+    const newRecording: AudioRecorder = audioModuleAny?.createAudioRecorder
+      ? audioModuleAny.createAudioRecorder(RecordingPresets.HIGH_QUALITY)
+      : new audioModuleAny.AudioRecorder(RecordingPresets.HIGH_QUALITY);
     await newRecording.prepareToRecordAsync();
     newRecording.record();
     setRecording(newRecording);

@@ -6,6 +6,7 @@ import {
   type AudioRecorder,
   type RecordingOptions,
 } from 'expo-audio';
+import { Platform } from 'react-native';
 import { useCallback, useMemo, useRef } from 'react';
 
 import { AssemblyAILiveClient, transcribeFileWithDiarization } from '../services/assemblyai';
@@ -82,7 +83,20 @@ export const useTranscription = () => {
 
   const liveClientRef = useRef<AssemblyAILiveClient | null>(null);
   const chunkLoopRunningRef = useRef(false);
-  const recorderRef = useRef(new AudioModule.AudioRecorder(recordingOptions));
+  const recorderRef = useRef<AudioRecorder | null>(null);
+
+  const getOrCreateRecorder = useCallback((): AudioRecorder => {
+    if (recorderRef.current) {
+      return recorderRef.current;
+    }
+
+    const audioModuleAny = AudioModule as any;
+    const recorder: AudioRecorder = audioModuleAny?.createAudioRecorder
+      ? audioModuleAny.createAudioRecorder(recordingOptions)
+      : new audioModuleAny.AudioRecorder(recordingOptions);
+    recorderRef.current = recorder;
+    return recorder;
+  }, []);
 
   const uploadFile = useCallback(
     async (fileUri: string) => {
@@ -109,7 +123,7 @@ export const useTranscription = () => {
     chunkLoopRunningRef.current = true;
 
     while (chunkLoopRunningRef.current && liveClientRef.current?.isOpen()) {
-      const recorder = recorderRef.current;
+      const recorder = getOrCreateRecorder();
 
       try {
         await recorder.prepareToRecordAsync();
@@ -136,12 +150,16 @@ export const useTranscription = () => {
         setError(err?.message || 'Live chunk capture failed');
       }
     }
-  }, [setError]);
+  }, [getOrCreateRecorder, setError]);
 
   const startLive = useCallback(async () => {
     setError(null);
 
     try {
+      if (Platform.OS === 'web') {
+        throw new Error('Live recording is not supported on web in this build.');
+      }
+
       const permission = await requestRecordingPermissionsAsync();
       if (!permission.granted) {
         throw new Error('Microphone permission is required for live transcription');

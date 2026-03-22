@@ -11,34 +11,52 @@ type SpeakerTimelineProps = {
 };
 
 export const SpeakerTimeline = ({ segments }: SpeakerTimelineProps) => {
+  // Merge consecutive segments from the same speaker.
+  const mergedSegments = useMemo(() => {
+    const result: Segment[] = [];
+    for (const seg of segments) {
+      const last = result[result.length - 1];
+      if (last && seg.speaker === last.speaker) {
+        result[result.length - 1] = { ...last, end: Math.max(last.end, seg.end) };
+      } else {
+        result.push({ ...seg });
+      }
+    }
+    return result;
+  }, [segments]);
+
   const maxEnd = useMemo(
-    () => Math.max(1, ...segments.map((segment) => segment.end)),
-    [segments]
+    () => Math.max(1, ...mergedSegments.map((segment) => segment.end)),
+    [mergedSegments]
   );
 
   const speakerColors = useMemo(() => {
-    const uniqueSpeakers = Array.from(new Set(segments.map((seg) => seg.speaker)));
+    const uniqueSpeakers = Array.from(new Set(mergedSegments.map((seg) => seg.speaker)));
     const colorMap: Record<string, string> = {};
     uniqueSpeakers.forEach((speaker, index) => {
       colorMap[speaker] = speakerPalette[index % speakerPalette.length];
     });
     return colorMap;
-  }, [segments]);
+  }, [mergedSegments]);
 
   return (
     <View style={styles.wrapper}>
       <Text style={styles.heading}>Speaker Timeline</Text>
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        {segments.map((segment, index) => {
+        {mergedSegments.map((segment, index) => {
           const duration = Math.max(0.2, segment.end - segment.start);
           const widthPct: DimensionValue = `${Math.max(3, (duration / maxEnd) * 100)}%`;
           const color = speakerColors[segment.speaker] || speakerPalette[0];
+          const label =
+            segment.speaker_display && segment.speaker_display.toLowerCase() !== 'unknown'
+              ? segment.speaker_display
+              : segment.speaker;
 
           return (
             <View key={`${segment.speaker}-${segment.start}-${index}`} style={styles.row}>
               <View style={styles.rowMeta}>
                 <View style={[styles.dot, { backgroundColor: color }]} />
-                <Text style={styles.speakerLabel}>{segment.speaker}</Text>
+                <Text style={styles.speakerLabel}>{label}</Text>
                 <Text style={styles.timeLabel}>
                   {formatSeconds(segment.start)} – {formatSeconds(segment.end)}
                 </Text>

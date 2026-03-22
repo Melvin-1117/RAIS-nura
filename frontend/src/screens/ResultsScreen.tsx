@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { IntensityBar } from '../components/IntensityBar';
+import { SoundCategoryCard } from '../components/SoundCategoryCard';
 import { SpeakerTimeline } from '../components/SpeakerTimeline';
 import { TranscriptBubble } from '../components/TranscriptBubble';
 import { speakerPalette, theme } from '../constants/theme';
@@ -13,9 +15,9 @@ type ResultsScreenProps = {
   onOpenSettings: () => void;
 };
 
-type TabKey = 'Transcript' | 'Speakers';
+type TabKey = 'Transcript' | 'Speakers' | 'Sounds';
 
-const tabs: TabKey[] = ['Transcript', 'Speakers'];
+const tabs: TabKey[] = ['Transcript', 'Speakers', 'Sounds'];
 
 export const ResultsScreen = ({
   result,
@@ -36,12 +38,15 @@ export const ResultsScreen = ({
         text: 'Speech detected in this segment.',
       }));
 
-    return [...entries].sort((a, b) => {
+    const sorted = [...entries].sort((a, b) => {
       if (a.start !== b.start) {
         return a.start - b.start;
       }
       return a.end - b.end;
     });
+
+    // Keep each speaker turn separate so "who spoke what" remains explicit.
+    return sorted;
   }, [result.segments, result.utterances]);
 
   useEffect(() => {
@@ -62,6 +67,80 @@ export const ResultsScreen = ({
     result.speaker_labels.forEach((speaker, index) => { map[speaker] = index; });
     return map;
   }, [result.speaker_labels]);
+
+  const speakerMatchByLabel = useMemo(() => {
+    const map: Record<string, { display_name: string; confidence: number; matched: boolean }> = {};
+    for (const match of result.speaker_matches ?? []) {
+      map[match.speaker] = match;
+    }
+    return map;
+  }, [result.speaker_matches]);
+
+  const speakerInsights = useMemo(() => {
+    const totals: Record<string, number> = {};
+    for (const segment of result.segments) {
+      const duration = Math.max(0, segment.end - segment.start);
+      totals[segment.speaker] = (totals[segment.speaker] ?? 0) + duration;
+    }
+
+    const ranked = Object.entries(totals)
+      .map(([speaker, duration]) => ({ speaker, duration }))
+      .sort((a, b) => b.duration - a.duration);
+
+    const fullDuration = Math.max(1, result.processing.duration_seconds || 1);
+
+    return ranked.map((item, idx) => {
+      const share = item.duration / fullDuration;
+      let activityCategory = 'Supporting';
+      if (idx === 0 || share >= 0.45) {
+        activityCategory = 'Dominant';
+      } else if (share >= 0.2) {
+        activityCategory = 'Active';
+      }
+
+      const match = speakerMatchByLabel[item.speaker];
+      const knownCategory = match?.matched ? 'Known' : 'Unknown';
+      const displayName =
+        match?.display_name && match.display_name.toLowerCase() !== 'unknown'
+          ? match.display_name
+          : item.speaker;
+
+      return {
+        speaker: item.speaker,
+        displayName,
+        duration: item.duration,
+        share,
+        activityCategory,
+        knownCategory,
+      };
+    });
+  }, [result.processing.duration_seconds, result.segments, speakerMatchByLabel]);
+
+  const soundsByCategory = useMemo(() => {
+    const grouped: Record<string, typeof result.sounds> = {};
+    for (const event of result.sounds) {
+      if (!grouped[event.category]) {
+        grouped[event.category] = [];
+      }
+      grouped[event.category].push(event);
+    }
+    return grouped;
+  }, [result.sounds]);
+
+  const processingMode = useMemo(() => {
+    const mode = result.processing.transcript_mode || 'unknown';
+    const pretty = mode
+      .replace(/_m\d+_m\d+/gi, '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+    const diarizationRan = mode.toLowerCase().includes('pyannote');
+
+    return {
+      raw: mode,
+      label: pretty,
+      diarizationRan,
+    };
+  }, [result.processing.transcript_mode]);
 
   return (
     <View style={styles.container}>
@@ -117,6 +196,15 @@ export const ResultsScreen = ({
         ))}
       </View>
 
+      <View style={styles.modeBar}>
+        <Text style={styles.modePrefix}>Pipeline</Text>
+        <View style={[styles.modeBadge, processingMode.diarizationRan ? styles.modeBadgeOk : styles.modeBadgeWarn]}>
+          <Text style={[styles.modeBadgeText, processingMode.diarizationRan ? styles.modeBadgeTextOk : styles.modeBadgeTextWarn]}>
+            {processingMode.label}
+          </Text>
+        </View>
+      </View>
+
       <ScrollView
         ref={transcriptScrollRef}
         style={styles.scroll}
@@ -146,16 +234,86 @@ export const ResultsScreen = ({
               <View style={styles.speakerChips}>
                 {result.speaker_labels.map((label, index) => {
                   const color = speakerPalette[index % speakerPalette.length];
+                  const match = speakerMatchByLabel[label];
+                  const title =
+                    match?.display_name && match.display_name.toLowerCase() !== 'unknown'
+                      ? match.display_name
+                      : label;
+                  const confidence = Math.round((match?.confidence ?? 0) * 100);
                   return (
                     <View key={label} style={[styles.speakerChip, { borderColor: `${color}40`, backgroundColor: `${color}12` }]}>
                       <View style={[styles.speakerDot, { backgroundColor: color }]} />
-                      <Text style={[styles.speakerLabel, { color }]}>{label}</Text>
+                      <Text style={[styles.speakerLabel, { color }]}>{title}</Text>
+                      <Text style={styles.speakerConfidence}>{confidence}%</Text>
                     </View>
                   );
                 })}
               </View>
             </View>
+
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Speaker Categorization</Text>
+              {speakerInsights.map((item, index) => {
+                const color = speakerPalette[index % speakerPalette.length];
+                return (
+                  <View key={item.speaker} style={styles.categoryRow}>
+                    <View style={styles.categoryLeft}>
+                      <View style={[styles.speakerDot, { backgroundColor: color }]} />
+                      <Text style={styles.categoryName}>{item.displayName}</Text>
+                    </View>
+                    <View style={styles.categoryTags}>
+                      <Text style={styles.categoryTag}>{item.activityCategory}</Text>
+                      <Text style={styles.categoryTag}>{item.knownCategory}</Text>
+                      <Text style={styles.categoryShare}>{Math.round(item.share * 100)}%</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+
             <SpeakerTimeline segments={result.segments} />
+          </View>
+        )}
+
+        {tab === 'Sounds' && (
+          <View>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Background Separation</Text>
+              <Text style={styles.metaText}>
+                {result.processing.separation_confirmed ? 'Speech and background streams separated.' : 'Separation fallback mode.'}
+              </Text>
+              <Text style={styles.metaText}>
+                Speech ratio: {Math.round((result.processing.speech_energy_ratio ?? 0) * 100)}% · Background ratio: {Math.round((result.processing.background_energy_ratio ?? 0) * 100)}%
+              </Text>
+            </View>
+
+            {Object.entries(soundsByCategory).length === 0 ? (
+              <View style={styles.empty}><Text style={styles.emptyText}>No background events detected.</Text></View>
+            ) : (
+              Object.entries(soundsByCategory).map(([category, items]) => (
+                <SoundCategoryCard
+                  key={category}
+                  category={category}
+                  items={items.map((item) => ({
+                    label: item.label,
+                    distance: item.distance,
+                    intensity: item.intensity,
+                    confidence: item.confidence,
+                  }))}
+                />
+              ))
+            )}
+
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Intensity Overview</Text>
+              {result.sounds.slice(0, 6).map((event, index) => (
+                <IntensityBar
+                  key={`${event.label}-${event.start}-${index}`}
+                  label={`${event.label} (${event.category})`}
+                  intensity={event.intensity}
+                />
+              ))}
+            </View>
           </View>
         )}
 
@@ -222,6 +380,45 @@ const styles = StyleSheet.create({
   tabText: { color: theme.textMuted, fontSize: 14, fontWeight: '500' },
   tabTextActive: { color: theme.textPrimary, fontWeight: '600' },
 
+  modeBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.border,
+    backgroundColor: theme.background,
+  },
+  modePrefix: {
+    color: theme.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  modeBadge: {
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+  },
+  modeBadgeOk: {
+    backgroundColor: 'rgba(34,197,94,0.12)',
+    borderColor: 'rgba(34,197,94,0.35)',
+  },
+  modeBadgeWarn: {
+    backgroundColor: 'rgba(245,158,11,0.12)',
+    borderColor: 'rgba(245,158,11,0.35)',
+  },
+  modeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  modeBadgeTextOk: { color: '#22C55E' },
+  modeBadgeTextWarn: { color: '#F59E0B' },
+
   // Content
   scroll: { flex: 1 },
   scrollContent: { padding: 20, paddingBottom: 48 },
@@ -250,6 +447,55 @@ const styles = StyleSheet.create({
   },
   speakerDot: { width: 7, height: 7, borderRadius: 4 },
   speakerLabel: { fontWeight: '600', fontSize: 13 },
+  speakerConfidence: { color: theme.textMuted, fontSize: 11, fontWeight: '600' },
+
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.border,
+  },
+  categoryLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  categoryName: {
+    color: theme.textPrimary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  categoryTags: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  categoryTag: {
+    color: theme.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: theme.surface,
+  },
+  categoryShare: {
+    color: theme.accent,
+    fontSize: 11,
+    fontWeight: '700',
+    minWidth: 30,
+    textAlign: 'right',
+  },
+
+  metaText: {
+    color: theme.textMuted,
+    fontSize: 12,
+    marginBottom: 6,
+  },
 
   empty: {
     backgroundColor: theme.card,

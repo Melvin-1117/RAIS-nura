@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { NativeModules, Platform } from 'react-native';
 
-const DEFAULT_API_PORT = '8002';
+const DEFAULT_API_PORT = '8003';
 const FALLBACK_API_BASE_URL = `http://10.0.2.2:${DEFAULT_API_PORT}`;
 
 const extractHostFromScriptUrl = (): string | null => {

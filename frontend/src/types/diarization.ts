@@ -2,13 +2,24 @@ export type Segment = {
   start: number;
   end: number;
   speaker: string;
+  speaker_display?: string;
+  speaker_confidence?: number;
 };
 
 export type Utterance = {
   start: number;
   end: number;
   speaker: string;
+  speaker_display?: string;
+  speaker_confidence?: number;
   text: string;
+};
+
+export type SpeakerMatch = {
+  speaker: string;
+  display_name: string;
+  confidence: number;
+  matched: boolean;
 };
 
 export type SoundEvent = {
@@ -26,12 +37,16 @@ export type ProcessingMeta = {
   source_sample_rate: number;
   output_sample_rate: number;
   transcript_mode: string;
+  separation_confirmed?: boolean;
+  speech_energy_ratio?: number;
+  background_energy_ratio?: number;
 };
 
 export type DiarizationResponse = {
   total_speakers: number;
   segments: Segment[];
   speaker_labels: string[];
+  speaker_matches?: SpeakerMatch[];
   utterances: Utterance[];
   sounds: SoundEvent[];
   processing: ProcessingMeta;

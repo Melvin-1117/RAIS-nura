@@ -10,6 +10,7 @@ from app.schemas import (
     ProcessingMetaOut,
     SegmentOut,
     SoundEventOut,
+    SpeakerMatchOut,
     UtteranceOut,
 )
 from app.services.diarization_service import diarize_file
@@ -59,7 +60,13 @@ async def diarize_audio(file: UploadFile = File(...)) -> DiarizationResponse:
             raise HTTPException(status_code=500, detail=f"Diarization failed: {exc}") from exc
 
     response_segments = [
-        SegmentOut(start=seg["start"], end=seg["end"], speaker=seg["speaker"])
+        SegmentOut(
+            start=seg["start"],
+            end=seg["end"],
+            speaker=seg["speaker"],
+            speaker_display=seg.get("speaker_display", seg["speaker"]),
+            speaker_confidence=float(seg.get("speaker_confidence", 0.0)),
+        )
         for seg in result["segments"]
     ]
     response_utterances = [
@@ -67,6 +74,8 @@ async def diarize_audio(file: UploadFile = File(...)) -> DiarizationResponse:
             start=entry["start"],
             end=entry["end"],
             speaker=entry["speaker"],
+            speaker_display=entry.get("speaker_display", entry["speaker"]),
+            speaker_confidence=float(entry.get("speaker_confidence", 0.0)),
             text=entry["text"],
         )
         for entry in result["utterances"]
@@ -84,10 +93,21 @@ async def diarize_audio(file: UploadFile = File(...)) -> DiarizationResponse:
         for entry in result["sounds"]
     ]
 
+    speaker_matches = [
+        SpeakerMatchOut(
+            speaker=item["speaker"],
+            display_name=item["display_name"],
+            confidence=float(item.get("confidence", 0.0)),
+            matched=bool(item.get("matched", False)),
+        )
+        for item in result.get("speaker_matches", [])
+    ]
+
     return DiarizationResponse(
         total_speakers=result["total_speakers"],
         segments=response_segments,
         speaker_labels=result["speaker_labels"],
+        speaker_matches=speaker_matches,
         utterances=response_utterances,
         sounds=response_sounds,
         processing=ProcessingMetaOut(**result["processing"]),

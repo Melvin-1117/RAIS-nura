@@ -13,6 +13,11 @@ type TranscriptBubbleProps = {
 export const TranscriptBubble = ({ utterance, speakerIndex }: TranscriptBubbleProps) => {
   const color = speakerPalette[speakerIndex % speakerPalette.length];
   const transcriptText = utterance.text?.trim() ?? '';
+  const speakerText =
+    utterance.speaker_display && utterance.speaker_display.toLowerCase() !== 'unknown'
+      ? utterance.speaker_display
+      : utterance.speaker;
+  const confidence = Math.round((utterance.speaker_confidence ?? 0) * 100);
 
   return (
     <View style={styles.row}>
@@ -20,7 +25,8 @@ export const TranscriptBubble = ({ utterance, speakerIndex }: TranscriptBubblePr
       <View style={[styles.stripe, { backgroundColor: color }]} />
       <View style={styles.bubble}>
         <View style={styles.header}>
-          <Text style={[styles.speaker, { color }]}>{utterance.speaker}</Text>
+          <Text style={[styles.speaker, { color }]}>{speakerText}</Text>
+          <Text style={styles.confidence}>{confidence}%</Text>
         </View>
         {transcriptText ? <Text style={styles.text}>{transcriptText}</Text> : null}
         <Text style={styles.time}>
@@ -60,6 +66,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.3,
     textTransform: 'uppercase',
+  },
+  confidence: {
+    color: theme.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   time: {
     color: theme.textMuted,

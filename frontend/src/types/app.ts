@@ -1,3 +1,5 @@
+import { getDefaultApiBaseUrl } from '../utils/network';
+
 export type PickedAudio = {
   uri: string;
   name: string;
@@ -11,7 +13,7 @@ export type AppSettings = {
 };
 
 export const defaultSettings: AppSettings = {
-  apiBaseUrl: 'http://localhost:8002',
+  apiBaseUrl: getDefaultApiBaseUrl(),
   speakerMatchThreshold: 0.85,
   chunkSizeSeconds: 2,
 };

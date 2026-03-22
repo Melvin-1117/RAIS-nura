@@ -5,8 +5,9 @@ import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-nativ
 import { storageKeys } from '../constants/storage';
 import { theme } from '../constants/theme';
 import { AppSettings } from '../types/app';
+import { getDefaultApiBaseUrl } from '../utils/network';
 
-const FIXED_API_BASE_URL = 'http://localhost:8002';
+const FIXED_API_BASE_URL = getDefaultApiBaseUrl();
 
 type SettingsScreenProps = {
   initialSettings: AppSettings;
@@ -27,7 +28,8 @@ export const SettingsScreen = ({ initialSettings, onSave, onBack }: SettingsScre
       const parsed = JSON.parse(raw) as AppSettings;
       const migratedApiBaseUrl =
         parsed.apiBaseUrl === 'http://localhost:8000' ||
-        parsed.apiBaseUrl === 'http://localhost:8001'
+        parsed.apiBaseUrl === 'http://localhost:8001' ||
+        parsed.apiBaseUrl === 'http://localhost:8002'
           ? FIXED_API_BASE_URL
           : parsed.apiBaseUrl;
       setApiBaseUrl(migratedApiBaseUrl);
