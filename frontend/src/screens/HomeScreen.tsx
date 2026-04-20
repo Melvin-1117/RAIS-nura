@@ -422,18 +422,6 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: theme.danger,
   },
-  primaryBtn: {
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.accent,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  primaryBtnText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
   btnPressed: {
     opacity: 0.75,
   },

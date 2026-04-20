@@ -6,7 +6,7 @@ from app.settings import ENV_FILE_PATH, settings
 
 app = FastAPI(
     title="Real-Time Audio Intelligence API",
-    description="Milestone 1: Speaker Count Extraction using pyannote.audio",
+    description="Speaker diarization, transcription, and sound classification (M1–M7)",
     version="0.1.0",
 )
 

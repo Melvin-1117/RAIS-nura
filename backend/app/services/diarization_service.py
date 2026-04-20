@@ -41,13 +41,17 @@ def _maybe_release_models() -> None:
     gc.collect()
 
 
-def _finalize_result(result: Dict[str, Any]) -> Dict[str, Any]:
-    return result
-
-
 def _allow_whisper_fallback() -> bool:
-    # When AssemblyAI-first mode is enabled, skip Whisper/local ASR paths to save memory.
     return not (settings.prefer_assemblyai_transcription and bool(settings.assemblyai_api_key))
+
+
+def _sep_fields(sep: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the three separation-related processing fields."""
+    return {
+        "separation_confirmed": bool(sep.get("separation_confirmed", False)),
+        "speech_energy_ratio": float(sep.get("speech_energy_ratio", 0.0)),
+        "background_energy_ratio": float(sep.get("background_energy_ratio", 0.0)),
+    }
 
 
 def _merge_adjacent_speaker_segments(
@@ -1106,18 +1110,13 @@ def diarize_file(input_path: str) -> Dict:
                 assemblyai_normalized = normalized
 
                 if not settings.enable_pyannote_diarization:
-                    return _finalize_result({
+                    return {
                         "total_speakers": len(normalized["speaker_labels"]),
                         "segments": normalized["segments"],
                         "speaker_labels": normalized["speaker_labels"],
                         "speaker_matches": [
-                            {
-                                "speaker": speaker,
-                                "display_name": speaker,
-                                "confidence": 1.0,
-                                "matched": True,
-                            }
-                            for speaker in normalized["speaker_labels"]
+                            {"speaker": s, "display_name": s, "confidence": 1.0, "matched": True}
+                            for s in normalized["speaker_labels"]
                         ],
                         "utterances": normalized["utterances"],
                         "sounds": sound_events,
@@ -1126,13 +1125,11 @@ def diarize_file(input_path: str) -> Dict:
                             "source_sample_rate": processed_audio["source_sample_rate"],
                             "output_sample_rate": processed_audio["output_sample_rate"],
                             "transcript_mode": "assemblyai_m1_m2",
-                            "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
-                            "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
-                            "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
                             "overall_energy_rms": processed_audio["overall_energy_rms"],
                             "overall_intensity": processed_audio["overall_intensity"],
+                            **_sep_fields(separation_meta),
                         },
-                    })
+                    }
             except Exception as exc:
                 assemblyai_error = str(exc)
                 print(f"[AssemblyAI ERROR] {assemblyai_error}")
@@ -1309,7 +1306,7 @@ def diarize_file(input_path: str) -> Dict:
         elif assemblyai_transcript_only_payload:
             transcript_mode = "pyannote_plus_assemblyai_text_m1_m2"
 
-        return _finalize_result({
+        return {
             "total_speakers": len(speaker_labels),
             "segments": diarized_segments,
             "speaker_labels": speaker_labels,
@@ -1321,28 +1318,21 @@ def diarize_file(input_path: str) -> Dict:
                 "source_sample_rate": processed_audio["source_sample_rate"],
                 "output_sample_rate": processed_audio["output_sample_rate"],
                 "transcript_mode": transcript_mode,
-                "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
-                "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
-                "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
                 "overall_energy_rms": processed_audio["overall_energy_rms"],
                 "overall_intensity": processed_audio["overall_intensity"],
+                **_sep_fields(separation_meta),
             },
-        })
+        }
 
     if assemblyai_normalized:
         speaker_labels = assemblyai_normalized.get("speaker_labels", [])
-        return _finalize_result({
+        return {
             "total_speakers": len(speaker_labels),
             "segments": assemblyai_normalized.get("segments", []),
             "speaker_labels": speaker_labels,
             "speaker_matches": [
-                {
-                    "speaker": speaker,
-                    "display_name": speaker,
-                    "confidence": 1.0,
-                    "matched": True,
-                }
-                for speaker in speaker_labels
+                {"speaker": s, "display_name": s, "confidence": 1.0, "matched": True}
+                for s in speaker_labels
             ],
             "utterances": assemblyai_normalized.get("utterances", []),
             "sounds": sound_events,
@@ -1351,13 +1341,11 @@ def diarize_file(input_path: str) -> Dict:
                 "source_sample_rate": processed_audio["source_sample_rate"],
                 "output_sample_rate": processed_audio["output_sample_rate"],
                 "transcript_mode": "assemblyai_m1_m2_pyannote_unavailable",
-                "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
-                "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
-                "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
                 "overall_energy_rms": processed_audio["overall_energy_rms"],
                 "overall_intensity": processed_audio["overall_intensity"],
+                **_sep_fields(separation_meta),
             },
-        })
+        }
 
     if assemblyai_transcript_only_payload:
         result = _build_assemblyai_transcript_only_result(
@@ -1365,151 +1353,50 @@ def diarize_file(input_path: str) -> Dict:
             processed_audio=processed_audio,
         )
         result["sounds"] = sound_events
-        result["processing"].update(
-            {
-                "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
-                "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
-                "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
-            }
-        )
-        return _finalize_result(result)
+        result["processing"].update(_sep_fields(separation_meta))
+        return result
 
     if whisper_segments:
-        result = _build_whisper_only_result(
-            whisper_segments=whisper_segments,
-            processed_audio=processed_audio,
-            transcript_mode="whisper_m1_m2",
-        )
+        result = _build_whisper_only_result(whisper_segments, processed_audio, "whisper_m1_m2")
         result["sounds"] = sound_events
-        result["processing"].update(
-            {
-                "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
-                "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
-                "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
-            }
-        )
-        return _finalize_result(result)
+        result["processing"].update(_sep_fields(separation_meta))
+        return result
 
     if whisper_text:
         result = _build_whisper_only_result(
-            whisper_segments=[
-                {
-                    "start": 0.0,
-                    "end": max(0.1, float(processed_audio["duration_seconds"])),
-                    "text": whisper_text,
-                }
-            ],
-            processed_audio=processed_audio,
-            transcript_mode="whisper_text_only_m1_m2",
+            [{"start": 0.0, "end": max(0.1, float(processed_audio["duration_seconds"])), "text": whisper_text}],
+            processed_audio,
+            "whisper_text_only_m1_m2",
         )
         result["sounds"] = sound_events
-        result["processing"].update(
-            {
-                "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
-                "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
-                "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
-            }
-        )
-        return _finalize_result(result)
+        result["processing"].update(_sep_fields(separation_meta))
+        return result
 
     if local_whisper_segments:
-        result = _build_whisper_only_result(
-            whisper_segments=local_whisper_segments,
-            processed_audio=processed_audio,
-            transcript_mode="local_whisper_m1_m2",
-        )
+        result = _build_whisper_only_result(local_whisper_segments, processed_audio, "local_whisper_m1_m2")
         result["sounds"] = sound_events
-        result["processing"].update(
-            {
-                "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
-                "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
-                "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
-            }
-        )
-        return _finalize_result(result)
+        result["processing"].update(_sep_fields(separation_meta))
+        return result
+
+    def _error_result(message: str, mode: str) -> Dict[str, Any]:
+        r = _build_no_diarization_placeholder_result(processed_audio, message, mode)
+        r["sounds"] = sound_events
+        r["processing"].update(_sep_fields(separation_meta))
+        return r
 
     if assemblyai_error:
-        result = _build_no_diarization_placeholder_result(
-            processed_audio=processed_audio,
-            message="AssemblyAI transcription failed. Using placeholder transcript.",
-            transcript_mode="assemblyai_error_m1_m2",
-        )
-        result["sounds"] = sound_events
-        result["processing"].update(
-            {
-                "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
-                "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
-                "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
-            }
-        )
-        return _finalize_result(result)
+        return _error_result("AssemblyAI transcription failed. Using placeholder transcript.", "assemblyai_error_m1_m2")
 
     if whisper_error:
-        result = _build_no_diarization_placeholder_result(
-            processed_audio=processed_audio,
-            message="Whisper transcription failed. Using placeholder transcript.",
-            transcript_mode="whisper_error_m1_m2",
-        )
-        result["sounds"] = sound_events
-        result["processing"].update(
-            {
-                "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
-                "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
-                "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
-            }
-        )
-        return _finalize_result(result)
+        return _error_result("Whisper transcription failed. Using placeholder transcript.", "whisper_error_m1_m2")
 
     if local_whisper_error:
-        result = _build_no_diarization_placeholder_result(
-            processed_audio=processed_audio,
-            message="Local Whisper fallback failed. Using placeholder transcript.",
-            transcript_mode="local_whisper_error_m1_m2",
-        )
-        result["sounds"] = sound_events
-        result["processing"].update(
-            {
-                "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
-                "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
-                "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
-            }
-        )
-        return _finalize_result(result)
+        return _error_result("Local Whisper fallback failed. Using placeholder transcript.", "local_whisper_error_m1_m2")
 
     if diarization_error:
-        diarization_message = "Diarization failed. Configure HF_TOKEN to enable speaker counting."
+        msg = "Diarization failed. Configure HF_TOKEN to enable speaker counting."
         if "disabled by low-memory configuration" in diarization_error.lower():
-            diarization_message = (
-                "Diarization is disabled by low-memory mode. "
-                "Set ENABLE_PYANNOTE_DIARIZATION=true and restart backend."
-            )
+            msg = "Diarization is disabled by low-memory mode. Set ENABLE_PYANNOTE_DIARIZATION=true and restart backend."
+        return _error_result(msg, "diarization_error_m1_m2")
 
-        result = _build_no_diarization_placeholder_result(
-            processed_audio=processed_audio,
-            message=diarization_message,
-            transcript_mode="diarization_error_m1_m2",
-        )
-        result["sounds"] = sound_events
-        result["processing"].update(
-            {
-                "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
-                "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
-                "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
-            }
-        )
-        return _finalize_result(result)
-
-    result = _build_no_diarization_placeholder_result(
-        processed_audio=processed_audio,
-        message="No transcription provider configured. Add AssemblyAI or Whisper API key.",
-        transcript_mode="no_transcription_provider_m1_m2",
-    )
-    result["sounds"] = sound_events
-    result["processing"].update(
-        {
-            "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
-            "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
-            "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
-        }
-    )
-    return _finalize_result(result)
+    return _error_result("No transcription provider configured. Add AssemblyAI or Whisper API key.", "no_transcription_provider_m1_m2")

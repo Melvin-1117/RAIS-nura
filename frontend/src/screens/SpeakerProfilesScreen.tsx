@@ -211,10 +211,6 @@ export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScr
     }
   };
 
-  const deleteProfile = (id: string) => {
-    removeProfile(id);
-  };
-
   const getInitials = (name: string) =>
     name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 
@@ -276,7 +272,7 @@ export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScr
               </Text>
             </View>
             <Pressable
-              onPress={() => deleteProfile(item.id)}
+              onPress={() => removeProfile(item.id)}
               style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.6 }]}
             >
               <Text style={styles.deleteText}>Remove</Text>
@@ -402,7 +398,6 @@ const styles = StyleSheet.create({
   },
   inputFocused: { borderColor: theme.accent },
 
-  recordRow: { flexDirection: 'row', gap: 10, marginBottom: 8 },
   recordBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
     padding: 11, borderRadius: theme.radius.md,
@@ -425,8 +420,6 @@ const styles = StyleSheet.create({
   addBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
   sampleReadyRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  sampleDot: { width: 6, height: 6, borderRadius: 3 },
-  sampleText: { color: theme.accentGreen, fontSize: 12, fontWeight: '500' },
   samplePill: {
     width: 24,
     height: 24,
