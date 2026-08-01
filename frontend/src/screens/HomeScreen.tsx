@@ -4,8 +4,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { BottomNavBar } from '../components/BottomNavBar';
+import { GlassPanel } from '../components/GlassPanel';
+import { TopAppBar } from '../components/TopAppBar';
 import { WaveformPlaceholder } from '../components/WaveformPlaceholder';
-import { theme } from '../constants/theme';
+import { accents, colors, gradients, radius, spacing, typography } from '../constants/theme';
 import { PickedAudio } from '../types/app';
 
 type HomeScreenProps = {
@@ -17,30 +20,10 @@ type HomeScreenProps = {
 
 // ── Feature cards data ──────────────────────────────────────────────────────
 const features = [
-  {
-    emoji: '🎙️',
-    title: 'Speaker\nDetection',
-    description: 'Count & identify speakers',
-    gradient: ['#6366F1', '#8B5CF6'] as const,
-  },
-  {
-    emoji: '📝',
-    title: 'Smart\nTranscript',
-    description: 'Speaker-aware text output',
-    gradient: ['#06B6D4', '#0EA5E9'] as const,
-  },
-  {
-    emoji: '🔊',
-    title: 'Sound\nClassification',
-    description: 'Categorize every sound',
-    gradient: ['#10B981', '#34D399'] as const,
-  },
-  {
-    emoji: '📍',
-    title: 'Spatial\nAnalysis',
-    description: 'Distance & intensity mapping',
-    gradient: ['#F59E0B', '#FBBF24'] as const,
-  },
+  { icon: '🎙️', title: 'Speaker\nDetection', color: colors.primary, hoverBorder: colors.primary },
+  { icon: '📝', title: 'Smart\nTranscript', color: colors.secondary, hoverBorder: colors.secondary },
+  { icon: '🔊', title: 'Sound\nClassification', color: colors.tertiary, hoverBorder: colors.tertiary },
+  { icon: '📍', title: 'Spatial\nAnalysis', color: accents.orange, hoverBorder: accents.orange },
 ];
 
 export const HomeScreen = ({
@@ -58,7 +41,7 @@ export const HomeScreen = ({
   const fadeCards = useRef(new Animated.Value(0)).current;
   const slideCTA = useRef(new Animated.Value(40)).current;
   const fadeCTA = useRef(new Animated.Value(0)).current;
-  const fadeNav = useRef(new Animated.Value(0)).current;
+  const fadeRecent = useRef(new Animated.Value(0)).current;
 
   // Pulsing glow for the Live button
   const liveGlow = useRef(new Animated.Value(0.4)).current;
@@ -74,18 +57,17 @@ export const HomeScreen = ({
         Animated.timing(fadeCTA, { toValue: 1, duration: 500, useNativeDriver: Platform.OS !== 'web' }),
         Animated.timing(slideCTA, { toValue: 0, duration: 500, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== 'web' }),
       ]),
-      Animated.timing(fadeNav, { toValue: 1, duration: 400, useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(fadeRecent, { toValue: 1, duration: 400, useNativeDriver: Platform.OS !== 'web' }),
     ]);
     sequence.start();
 
-    // Live glow pulse
     Animated.loop(
       Animated.sequence([
         Animated.timing(liveGlow, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: Platform.OS !== 'web' }),
         Animated.timing(liveGlow, { toValue: 0.4, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: Platform.OS !== 'web' }),
       ]),
     ).start();
-  }, [fadeHero, slideHero, fadeCards, fadeCTA, slideCTA, fadeNav, liveGlow]);
+  }, [fadeHero, slideHero, fadeCards, fadeCTA, slideCTA, fadeRecent, liveGlow]);
 
   // ── Audio actions ───────────────────────────────────────────────────────
   const pickAudio = async () => {
@@ -140,206 +122,119 @@ export const HomeScreen = ({
     setRecording(null);
   };
 
+  const handleNavigation = (tab: 'home' | 'live' | 'profiles' | 'settings') => {
+    if (tab === 'live') onOpenLive();
+    else if (tab === 'profiles') onOpenProfiles();
+    else if (tab === 'settings') onOpenSettings();
+  };
+
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-
-        {/* ── Brand Header ────────────────────────────────────────────── */}
-        <View style={styles.header}>
-          <View style={styles.logoRow}>
-            <View style={styles.logoContainer}>
-              <LinearGradient
-                colors={[theme.accent, theme.accentCyan]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.logoBg}
-              >
-                <View style={styles.logoBarGroup}>
-                  <View style={[styles.logoBar, { height: 10 }]} />
-                  <View style={[styles.logoBar, { height: 16 }]} />
-                  <View style={[styles.logoBar, { height: 12 }]} />
-                  <View style={[styles.logoBar, { height: 18 }]} />
-                  <View style={[styles.logoBar, { height: 8 }]} />
-                </View>
-              </LinearGradient>
-            </View>
-            <View>
-              <Text style={styles.logoTitle}>RAIS</Text>
-              <Text style={styles.logoSubtitle}>Audio Intelligence</Text>
-            </View>
+      {/* ── Top App Bar ────────────────────────────────────────────── */}
+      <TopAppBar
+        variant="logo"
+        rightElement={
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Pressable onPress={onOpenProfiles} style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.7 }]}>
+              <Text style={styles.headerBtnIcon}>👥</Text>
+            </Pressable>
+            <Pressable onPress={onOpenSettings} style={({ pressed }) => [styles.headerBtn, pressed && { opacity: 0.7 }]}>
+              <Text style={styles.headerBtnIcon}>⚙️</Text>
+            </Pressable>
           </View>
-          <Pressable
-            onPress={onOpenSettings}
-            style={({ pressed }) => [styles.settingsBtn, pressed && styles.btnPressed]}
-          >
-            <Text style={styles.settingsIcon}>⚙️</Text>
-          </Pressable>
-        </View>
+        }
+      />
 
-        {/* ── Hero Section ────────────────────────────────────────────── */}
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        {/* ── Hero Section ─────────────────────────────── */}
         <Animated.View style={[styles.hero, { opacity: fadeHero, transform: [{ translateY: slideHero }] }]}>
-          <Text style={styles.heroHeading}>
-            Understand{'\n'}every{' '}
-            <Text style={styles.heroAccent}>voice</Text>
-            {' '}&{'\n'}
-            <Text style={styles.heroAccent}>sound.</Text>
-          </Text>
+          <View style={styles.waveformRow}>
+            <WaveformPlaceholder color={colors.primary} />
+          </View>
+          <Text style={styles.heroHeading}>Audio Intelligence</Text>
           <Text style={styles.heroSub}>
-            Upload or record audio — get speaker-aware transcripts, sound classification, distance & intensity analysis, all powered by AI.
+            Upload a file or start live — uncover every voice and sound.
           </Text>
         </Animated.View>
 
-        {/* ── Feature Grid ────────────────────────────────────────────── */}
-        <Animated.View style={[styles.featureGrid, { opacity: fadeCards }]}>
-          {features.map((f, i) => (
-            <View key={f.title} style={styles.featureCard}>
-              <LinearGradient
-                colors={[`${f.gradient[0]}18`, `${f.gradient[1]}08`]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.featureCardGradient}
-              >
-                <View style={[styles.featureEmojiWrap, { backgroundColor: `${f.gradient[0]}20` }]}>
-                  <Text style={styles.featureEmoji}>{f.emoji}</Text>
+        {/* ── Feature Cards ────────────────────────────── */}
+        <Animated.View style={[styles.featureSection, { opacity: fadeCards }]}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.featureScroll}
+          >
+            {features.map((f) => (
+              <GlassPanel key={f.title} style={styles.featureCard}>
+                <View style={[styles.featureIconWrap, { backgroundColor: `${f.color}15` }]}>
+                  <Text style={styles.featureEmoji}>{f.icon}</Text>
                 </View>
                 <Text style={styles.featureTitle}>{f.title}</Text>
-                <Text style={styles.featureDesc}>{f.description}</Text>
-              </LinearGradient>
-            </View>
-          ))}
+              </GlassPanel>
+            ))}
+          </ScrollView>
         </Animated.View>
 
-        {/* ── Audio Input Card (CTA) ──────────────────────────────────── */}
-        <Animated.View style={[styles.ctaSection, { opacity: fadeCTA, transform: [{ translateY: slideCTA }] }]}>
-          <View style={styles.ctaCard}>
-            <LinearGradient
-              colors={['rgba(99, 102, 241, 0.08)', 'rgba(6, 182, 212, 0.04)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.ctaCardInner}
-            >
-              <Text style={styles.ctaSectionLabel}>GET STARTED</Text>
-
-              {/* Waveform */}
-              <View style={styles.waveformRow}>
-                <WaveformPlaceholder color={theme.accent} />
-              </View>
-
-              {/* Selected file indicator */}
-              {selectedAudio && (
-                <View style={styles.fileRow}>
-                  <View style={styles.fileIcon}>
-                    <Text style={styles.fileIconEmoji}>🎵</Text>
-                  </View>
-                  <Text style={styles.fileName} numberOfLines={1}>{selectedAudio.name}</Text>
-                  <Pressable onPress={() => setSelectedAudio(null)} style={styles.clearBtn}>
-                    <Text style={styles.clearText}>×</Text>
-                  </Pressable>
-                </View>
-              )}
-
-              {/* Action Buttons */}
-              <View style={styles.actionRow}>
-                <Pressable
-                  onPress={pickAudio}
-                  style={({ pressed }) => [styles.uploadBtn, pressed && styles.btnPressed]}
-                >
-                  <LinearGradient
-                    colors={theme.gradients.button}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.gradientBtnInner}
-                  >
-                    <Text style={styles.uploadBtnIcon}>📁</Text>
-                    <Text style={styles.uploadBtnText}>Upload File</Text>
-                  </LinearGradient>
-                </Pressable>
-
-                {!recording ? (
-                  <Pressable
-                    onPress={startRecording}
-                    style={({ pressed }) => [styles.recordBtn, pressed && styles.btnPressed]}
-                  >
-                    <View style={styles.recDot} />
-                    <Text style={styles.recordBtnText}>Record</Text>
-                  </Pressable>
-                ) : (
-                  <Pressable
-                    onPress={stopRecording}
-                    style={({ pressed }) => [styles.recordBtn, styles.recordBtnDanger, pressed && styles.btnPressed]}
-                  >
-                    <View style={styles.stopSquare} />
-                    <Text style={[styles.recordBtnText, { color: theme.danger }]}>Stop</Text>
-                  </Pressable>
-                )}
-              </View>
-            </LinearGradient>
+        {/* ── Selected File Indicator ──────────────────── */}
+        {selectedAudio && (
+          <View style={styles.filePill}>
+            <Text style={styles.fileIcon}>🎵</Text>
+            <Text style={styles.fileName} numberOfLines={1}>{selectedAudio.name}</Text>
+            <Pressable onPress={() => setSelectedAudio(null)} style={styles.clearBtn}>
+              <Text style={styles.clearText}>×</Text>
+            </Pressable>
           </View>
-        </Animated.View>
+        )}
 
-        {/* ── Quick Actions ───────────────────────────────────────────── */}
-        <Animated.View style={[styles.quickSection, { opacity: fadeNav }]}>
-          <Text style={styles.sectionLabel}>QUICK ACTIONS</Text>
-
-          {/* Live Listening — highlighted card */}
+        {/* ── CTAs ─────────────────────────────────────── */}
+        <Animated.View style={[styles.ctaSection, { opacity: fadeCTA, transform: [{ translateY: slideCTA }] }]}>
           <Pressable
-            onPress={onOpenLive}
-            style={({ pressed }) => [styles.liveCard, pressed && styles.btnPressed]}
+            onPress={pickAudio}
+            style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]}
           >
             <LinearGradient
-              colors={['rgba(239, 68, 68, 0.12)', 'rgba(249, 115, 22, 0.06)']}
+              colors={gradients.button}
               start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.liveCardInner}
+              end={{ x: 1, y: 0 }}
+              style={styles.primaryBtnInner}
             >
-              <View style={styles.liveLeft}>
-                <View style={styles.liveIconWrap}>
-                  <Animated.View style={[styles.livePulseRing, { opacity: liveGlow }]} />
-                  <View style={styles.liveDotInner} />
-                </View>
-                <View style={styles.liveTextGroup}>
-                  <Text style={styles.liveTitle}>Live Listening</Text>
-                  <Text style={styles.liveSub}>Real-time speaker & sound analysis</Text>
-                </View>
-              </View>
-              <Text style={styles.chevron}>›</Text>
+              <Text style={{ fontSize: 16 }}>📁</Text>
+              <Text style={styles.primaryBtnText}>Upload Audio File</Text>
             </LinearGradient>
           </Pressable>
 
-          {/* Bottom row: Speaker Profiles + Settings */}
-          <View style={styles.quickRow}>
-            <Pressable
-              onPress={onOpenProfiles}
-              style={({ pressed }) => [styles.quickCard, pressed && styles.btnPressed]}
-            >
-              <View style={[styles.quickIconWrap, { backgroundColor: `${theme.accent}18` }]}>
-                <Text style={styles.quickEmoji}>👥</Text>
-              </View>
-              <Text style={styles.quickTitle}>Speaker{'\n'}Profiles</Text>
-              <Text style={styles.quickSub}>Manage voices</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={onOpenSettings}
-              style={({ pressed }) => [styles.quickCard, pressed && styles.btnPressed]}
-            >
-              <View style={[styles.quickIconWrap, { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
-                <Text style={styles.quickEmoji}>⚙️</Text>
-              </View>
-              <Text style={styles.quickTitle}>Settings{'\n'}& Config</Text>
-              <Text style={styles.quickSub}>API & thresholds</Text>
-            </Pressable>
-          </View>
+          <Pressable
+            onPress={onOpenLive}
+            style={({ pressed }) => [styles.secondaryBtn, pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]}
+          >
+            <View style={styles.livePulseDot}>
+              <Animated.View style={[styles.livePulseRing, { opacity: liveGlow }]} />
+              <View style={styles.liveDotInner} />
+            </View>
+            <Text style={styles.secondaryBtnText}>Start Live Listening</Text>
+          </Pressable>
         </Animated.View>
 
-        {/* ── Footer ─────────────────────────────────────────────────── */}
-        <View style={styles.footer}>
-          <View style={styles.footerDivider} />
-          <Text style={styles.footerText}>RAIS · Real-time Audio Intelligence System</Text>
-          <Text style={styles.footerVersion}>v1.0 · Nura AI Labs</Text>
-        </View>
-
+        {/* ── Recent Insights ──────────────────────────── */}
+        <Animated.View style={[styles.recentSection, { opacity: fadeRecent }]}>
+          <Text style={styles.recentSectionTitle}>Recent Insights</Text>
+          <GlassPanel style={styles.recentCard}>
+            <View style={styles.recentLeft}>
+              <View style={styles.recentIconWrap}>
+                <Text style={styles.recentIcon}>🕒</Text>
+              </View>
+              <View>
+                <Text style={styles.recentName}>Weekly Sync Meeting</Text>
+                <Text style={styles.recentMeta}>24 Oct • 4 Speakers identified</Text>
+              </View>
+            </View>
+            <Text style={styles.recentArrow}>›</Text>
+          </GlassPanel>
+        </Animated.View>
       </ScrollView>
+
+      {/* ── Bottom Navigation Bar ───────────────────── */}
+      <BottomNavBar activeTab="home" onNavigate={handleNavigation} />
     </View>
   );
 };
@@ -348,189 +243,94 @@ export const HomeScreen = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.background,
+    backgroundColor: colors.background,
   },
   scroll: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 56,
+    paddingHorizontal: spacing.gutter,
+    paddingTop: 10,
+    paddingBottom: 110,
   },
 
-  // ── Header ──────────────────────────────────────────────────────────────
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 32,
-  },
-  logoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  logoContainer: {
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
-  logoBg: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoBarGroup: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 3,
-  },
-  logoBar: {
-    width: 3,
-    borderRadius: 2,
-    backgroundColor: '#FFFFFF',
-  },
-  logoTitle: {
-    color: theme.textPrimary,
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-  },
-  logoSubtitle: {
-    color: theme.textMuted,
-    fontSize: 10,
-    fontWeight: '500',
-    letterSpacing: 0.5,
-    marginTop: -1,
-  },
-  settingsBtn: {
+  // ── Header buttons ──────────────────────────────────────
+  headerBtn: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: theme.card,
+    borderRadius: 20,
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: theme.border,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  settingsIcon: {
-    fontSize: 18,
-  },
+  headerBtnIcon: { fontSize: 16 },
 
-  // ── Hero ────────────────────────────────────────────────────────────────
+  // ── Hero ──────────────────────────────────────────────────
   hero: {
-    marginBottom: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    minHeight: 250,
   },
   heroHeading: {
-    color: theme.textPrimary,
-    fontSize: 36,
-    fontWeight: '800',
-    letterSpacing: -1.2,
-    lineHeight: 44,
-    marginBottom: 14,
-  },
-  heroAccent: {
-    color: theme.accent,
+    color: colors.white,
+    ...typography.headlineXl,
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
   },
   heroSub: {
-    color: theme.textSecondary,
-    fontSize: 15,
-    lineHeight: 24,
-    fontWeight: '400',
-    maxWidth: 340,
+    color: colors.onSurfaceVariant,
+    ...typography.bodyMd,
+    textAlign: 'center',
+    maxWidth: 300,
+  },
+  waveformRow: {
+    height: 64,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
-  // ── Feature Grid ────────────────────────────────────────────────────────
-  featureGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 24,
-  },
+  // ── Feature Cards ─────────────────────────────────────────
+  featureSection: { marginVertical: 12 },
+  featureScroll: { gap: 12, paddingRight: 20 },
   featureCard: {
-    width: '48%' as any,
-    flexGrow: 1,
-    flexBasis: '46%' as any,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.border,
-    overflow: 'hidden',
-  },
-  featureCardGradient: {
+    width: 130,
+    height: 130,
     padding: 16,
-    minHeight: 130,
+    justifyContent: 'space-between',
   },
-  featureEmojiWrap: {
-    width: 36,
-    height: 36,
+  featureIconWrap: {
+    width: 40,
+    height: 40,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
   },
-  featureEmoji: {
-    fontSize: 18,
-  },
+  featureEmoji: { fontSize: 20 },
   featureTitle: {
-    color: theme.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 20,
-    marginBottom: 4,
-  },
-  featureDesc: {
-    color: theme.textMuted,
-    fontSize: 11,
-    fontWeight: '400',
+    color: colors.onSurface,
+    ...typography.labelMd,
     lineHeight: 16,
   },
 
-  // ── CTA Card ────────────────────────────────────────────────────────────
-  ctaSection: {
-    marginBottom: 28,
-  },
-  ctaCard: {
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.border,
-    overflow: 'hidden',
-  },
-  ctaCardInner: {
-    padding: 20,
-  },
-  ctaSectionLabel: {
-    color: theme.textMuted,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    marginBottom: 14,
-  },
-  waveformRow: {
-    marginBottom: 16,
-  },
-  fileRow: {
+  // ── File Pill ─────────────────────────────────────────────
+  filePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: theme.radius.md,
-    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+    paddingHorizontal: 16,
+    borderRadius: radius.pill,
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: `${theme.accent}25`,
-    marginBottom: 16,
+    borderColor: colors.border,
+    marginVertical: 12,
   },
-  fileIcon: {
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fileIconEmoji: {
-    fontSize: 14,
-  },
+  fileIcon: { fontSize: 14 },
   fileName: {
-    color: theme.textSecondary,
-    fontSize: 13,
+    color: '#A1A1AA',
+    ...typography.bodySm,
     fontWeight: '500',
     flex: 1,
   },
@@ -542,208 +342,75 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  clearText: {
-    color: theme.textMuted,
-    fontSize: 16,
-    fontWeight: '500',
-    lineHeight: 18,
+  clearText: { color: '#52525B', fontSize: 16, fontWeight: '500', lineHeight: 18 },
+
+  // ── CTAs ──────────────────────────────────────────────────
+  ctaSection: { gap: 12, marginVertical: 16 },
+  primaryBtn: {
+    borderRadius: radius.pill,
+    overflow: 'hidden',
+    height: 56,
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  actionRow: {
+  primaryBtnInner: {
+    flex: 1,
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  primaryBtnText: {
+    color: colors.white,
+    ...typography.headlineMd,
+    fontSize: 16,
+  },
+  secondaryBtn: {
+    height: 56,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(192, 193, 255, 0.2)',
+    backgroundColor: colors.surfaceContainerLow,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 10,
   },
-  uploadBtn: {
-    flex: 1,
-    borderRadius: theme.radius.md,
-    overflow: 'hidden',
+  secondaryBtnText: { color: colors.onSurface, ...typography.headlineMd, fontSize: 16 },
+  livePulseDot: { width: 10, height: 10, justifyContent: 'center', alignItems: 'center' },
+  livePulseRing: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: colors.error,
   },
-  gradientBtnInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: theme.radius.md,
-  },
-  uploadBtnIcon: {
-    fontSize: 14,
-  },
-  uploadBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  recordBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.borderLight,
-    backgroundColor: theme.surface,
-    paddingVertical: 14,
-  },
-  recordBtnDanger: {
-    borderColor: `${theme.danger}40`,
-    backgroundColor: `${theme.danger}10`,
-  },
-  recordBtnText: {
-    color: theme.textPrimary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  recDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: theme.danger,
-  },
-  stopSquare: {
-    width: 8,
-    height: 8,
-    borderRadius: 2,
-    backgroundColor: theme.danger,
-  },
+  liveDotInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.error },
 
-  // ── Quick Actions ───────────────────────────────────────────────────────
-  quickSection: {
-    marginBottom: 32,
-  },
-  sectionLabel: {
-    color: theme.textMuted,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    marginBottom: 14,
-  },
-
-  // Live card
-  liveCard: {
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: `${theme.danger}25`,
-    overflow: 'hidden',
-    marginBottom: 12,
-  },
-  liveCardInner: {
+  // ── Recent ────────────────────────────────────────────────
+  recentSection: { marginVertical: 16 },
+  recentSectionTitle: { color: colors.white, ...typography.headlineMd, fontSize: 16, marginBottom: 12 },
+  recentCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 18,
+    padding: 16,
   },
-  liveLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    flex: 1,
-  },
-  liveIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: `${theme.danger}15`,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  livePulseRing: {
-    position: 'absolute',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: theme.danger,
-  },
-  liveDotInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: theme.danger,
-  },
-  liveTextGroup: {
-    flex: 1,
-    gap: 2,
-  },
-  liveTitle: {
-    color: theme.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  liveSub: {
-    color: theme.textMuted,
-    fontSize: 12,
-    fontWeight: '400',
-  },
-  chevron: {
-    color: theme.textMuted,
-    fontSize: 24,
-    fontWeight: '300',
-  },
-
-  // Quick row (2 cards)
-  quickRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  quickCard: {
-    flex: 1,
-    backgroundColor: theme.card,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.border,
-    padding: 18,
-    gap: 10,
-  },
-  quickIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quickEmoji: {
-    fontSize: 18,
-  },
-  quickTitle: {
-    color: theme.textPrimary,
-    fontSize: 14,
-    fontWeight: '700',
-    lineHeight: 20,
-  },
-  quickSub: {
-    color: theme.textMuted,
-    fontSize: 11,
-    fontWeight: '400',
-  },
-
-  // ── Footer ──────────────────────────────────────────────────────────────
-  footer: {
-    alignItems: 'center',
-    paddingTop: 8,
-  },
-  footerDivider: {
+  recentLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  recentIconWrap: {
     width: 40,
-    height: 1,
-    backgroundColor: theme.border,
-    marginBottom: 16,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  footerText: {
-    color: theme.textMuted,
-    fontSize: 11,
-    fontWeight: '500',
-    letterSpacing: 0.3,
-    marginBottom: 4,
-  },
-  footerVersion: {
-    color: `${theme.textMuted}80`,
-    fontSize: 10,
-    fontWeight: '400',
-  },
-
-  // ── Shared ──────────────────────────────────────────────────────────────
-  btnPressed: {
-    opacity: 0.75,
-    transform: [{ scale: 0.98 }],
-  },
+  recentIcon: { fontSize: 18 },
+  recentName: { color: colors.onSurface, ...typography.bodySm, fontWeight: '600' },
+  recentMeta: { color: colors.outline, fontSize: 10, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
+  recentArrow: { color: colors.onSurfaceVariant, fontSize: 20 },
 });

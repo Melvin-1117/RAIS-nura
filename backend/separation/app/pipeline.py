@@ -55,7 +55,7 @@ def _ensure_demucs_model() -> Any:
 
     from demucs.pretrained import get_model  # type: ignore[import-not-found]
 
-    _demucs_model = get_model("htdemucs")
+    _demucs_model = get_model("mdx_q")
     _demucs_model.cpu()
     _demucs_model.eval()
     return _demucs_model

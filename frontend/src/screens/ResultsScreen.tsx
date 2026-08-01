@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { IntensityBar } from '../components/IntensityBar';
-import { SoundCategoryList } from '../components/SoundCategoryList';
-import { SpeakerTimeline } from '../components/SpeakerTimeline';
-import { TranscriptBubble } from '../components/TranscriptBubble';
-import { speakerPalette, theme } from '../constants/theme';
+import { BottomNavBar } from '../components/BottomNavBar';
+import { GlassPanel } from '../components/GlassPanel';
+import { TopAppBar } from '../components/TopAppBar';
+import { colors, radius, spacing, speakerPalette, typography } from '../constants/theme';
+import { formatTimestamp } from '../utils/time';
 import { DiarizationResponse } from '../types/diarization';
 import { ALL_CATEGORIES, CategorizedSoundEvents, SoundCategory } from '../types/soundCategories';
 
@@ -17,8 +17,24 @@ type ResultsScreenProps = {
 };
 
 type TabKey = 'Transcript' | 'Speakers' | 'Sounds';
-
 const tabs: TabKey[] = ['Transcript', 'Speakers', 'Sounds'];
+const tabIcons: Record<TabKey, string> = { Transcript: '📝', Speakers: '👥', Sounds: '🔊' };
+
+// ── Category display config ─────────────────────────────────────────────────
+const categoryIcons: Record<string, string> = {
+  Natural: '🌿',
+  Artificial: '⚙️',
+  'Human Activity': '🤧',
+  Music: '🎵',
+  Animal: '🐾',
+};
+const categoryIconColors: Record<string, string> = {
+  Natural: colors.tertiary,
+  Artificial: colors.secondary,
+  'Human Activity': colors.error,
+  Music: '#F59E0B',
+  Animal: colors.tertiary,
+};
 
 export const ResultsScreen = ({
   result,
@@ -29,6 +45,7 @@ export const ResultsScreen = ({
   const [tab, setTab] = useState<TabKey>('Transcript');
   const transcriptScrollRef = useRef<ScrollView>(null);
 
+  // ── Derived data ──────────────────────────────────────────────────────────
   const transcriptEntries = useMemo(() => {
     const entries = result.utterances.length > 0
       ? result.utterances
@@ -38,28 +55,14 @@ export const ResultsScreen = ({
         speaker: segment.speaker,
         text: 'Speech detected in this segment.',
       }));
-
-    const sorted = [...entries].sort((a, b) => {
-      if (a.start !== b.start) {
-        return a.start - b.start;
-      }
-      return a.end - b.end;
-    });
-
-    // Keep each speaker turn separate so "who spoke what" remains explicit.
-    return sorted;
+    return [...entries].sort((a, b) => a.start !== b.start ? a.start - b.start : a.end - b.end);
   }, [result.segments, result.utterances]);
 
   useEffect(() => {
-    if (tab !== 'Transcript') {
-      return;
-    }
-
-    // Delay one tick to ensure content layout is available before scrolling.
+    if (tab !== 'Transcript') return;
     const timer = setTimeout(() => {
       transcriptScrollRef.current?.scrollToEnd({ animated: true });
     }, 0);
-
     return () => clearTimeout(timer);
   }, [tab, transcriptEntries]);
 
@@ -83,45 +86,31 @@ export const ResultsScreen = ({
       const duration = Math.max(0, segment.end - segment.start);
       totals[segment.speaker] = (totals[segment.speaker] ?? 0) + duration;
     }
-
     const ranked = Object.entries(totals)
       .map(([speaker, duration]) => ({ speaker, duration }))
       .sort((a, b) => b.duration - a.duration);
-
     const fullDuration = Math.max(1, result.processing.duration_seconds || 1);
-
-    return ranked.map((item, idx) => {
+    return ranked.map((item) => {
       const share = item.duration / fullDuration;
-      let activityCategory = 'Supporting';
-      if (idx === 0 || share >= 0.45) {
-        activityCategory = 'Dominant';
-      } else if (share >= 0.2) {
-        activityCategory = 'Active';
-      }
-
       const match = speakerMatchByLabel[item.speaker];
-      const knownCategory = match?.matched ? 'Known' : 'Unknown';
       const displayName =
         match?.display_name && match.display_name.toLowerCase() !== 'unknown'
           ? match.display_name
           : item.speaker;
-
       return {
         speaker: item.speaker,
         displayName,
         duration: item.duration,
         share,
-        activityCategory,
-        knownCategory,
+        confidence: match?.confidence ?? 0,
+        matched: match?.matched ?? false,
       };
     });
   }, [result.processing.duration_seconds, result.segments, speakerMatchByLabel]);
 
   const categorizedSounds = useMemo((): CategorizedSoundEvents => {
     const byCategory = {} as Record<SoundCategory, CategorizedSoundEvents['frames']>;
-    for (const cat of ALL_CATEGORIES) {
-      byCategory[cat] = [];
-    }
+    for (const cat of ALL_CATEGORIES) { byCategory[cat] = []; }
     for (const event of result.sounds) {
       const cat = (event.category as SoundCategory) || 'Artificial';
       if (byCategory[cat]) {
@@ -137,371 +126,346 @@ export const ResultsScreen = ({
     return { frames: [], byCategory, summary: [] };
   }, [result.sounds]);
 
-  const processingMode = useMemo(() => {
-    const mode = result.processing.transcript_mode || 'unknown';
-    const pretty = mode
-      .replace(/_m\d+_m\d+/gi, '')
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (char) => char.toUpperCase());
-    const diarizationRan = mode.toLowerCase().includes('pyannote');
+  const durationText = useMemo(() => {
+    const s = result.processing.duration_seconds;
+    const m = Math.floor(s / 60);
+    const sec = Math.round(s % 60);
+    return `${m}m ${sec}s`;
+  }, [result.processing.duration_seconds]);
 
-    return {
-      raw: mode,
-      label: pretty,
-      diarizationRan,
-    };
-  }, [result.processing.transcript_mode]);
+  const getSpeakerColor = (speaker: string) => {
+    const idx = speakerIndexMap[speaker] ?? 0;
+    return speakerPalette[idx % speakerPalette.length];
+  };
 
-  const overallIntensity = result.processing.overall_intensity ?? 'Low';
-  const overallRmsLabel = (result.processing.overall_energy_rms ?? 0).toFixed(4);
+  const handleNavigation = (navTab: 'home' | 'live' | 'profiles' | 'settings') => {
+    if (navTab === 'home') onGoHome();
+    else if (navTab === 'profiles') onOpenProfiles();
+    else if (navTab === 'settings') onOpenSettings();
+  };
 
   return (
     <View style={styles.container}>
-      {/* Top bar */}
-      <View style={styles.topBar}>
-        <Text style={styles.screenTitle}>Results</Text>
-        <View style={styles.topActions}>
-          <Pressable onPress={onOpenProfiles} style={({ pressed }) => [styles.topActionBtn, pressed && { opacity: 0.7 }]}>
-            <Text style={styles.topActionText}>Profiles</Text>
-          </Pressable>
-          <Pressable onPress={onOpenSettings} style={({ pressed }) => [styles.topActionBtn, pressed && { opacity: 0.7 }]}>
-            <Text style={styles.topActionText}>Settings</Text>
-          </Pressable>
-          <Pressable onPress={onGoHome} style={({ pressed }) => [styles.homeBtn, pressed && { opacity: 0.7 }]}>
-            <Text style={styles.homeBtnText}>← Home</Text>
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Stats */}
-      <View style={styles.statsBar}>
-        <View style={styles.statItem}>
-          <Text style={styles.statVal}>{result.total_speakers}</Text>
-          <Text style={styles.statLbl}>Speakers</Text>
-        </View>
-        <View style={styles.statSep} />
-        <View style={styles.statItem}>
-          <Text style={styles.statVal}>{transcriptEntries.length}</Text>
-          <Text style={styles.statLbl}>Utterances</Text>
-        </View>
-        <View style={styles.statSep} />
-        <View style={styles.statItem}>
-          <Text style={styles.statVal}>{result.processing.duration_seconds}s</Text>
-          <Text style={styles.statLbl}>Duration</Text>
-        </View>
-        <View style={styles.statSep} />
-        <View style={styles.statItem}>
-          <Text style={[styles.statVal, { color: theme.accentGreen }]}>Done</Text>
-          <Text style={styles.statLbl}>Status</Text>
-        </View>
-      </View>
-
-      {/* Tab bar */}
-      <View style={styles.tabBar}>
-        {tabs.map((t) => (
-          <Pressable
-            key={t}
-            onPress={() => setTab(t)}
-            style={[styles.tabBtn, tab === t && styles.tabBtnActive]}
-          >
-            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <View style={styles.modeBar}>
-        <Text style={styles.modePrefix}>Pipeline</Text>
-        <View style={[styles.modeBadge, processingMode.diarizationRan ? styles.modeBadgeOk : styles.modeBadgeWarn]}>
-          <Text style={[styles.modeBadgeText, processingMode.diarizationRan ? styles.modeBadgeTextOk : styles.modeBadgeTextWarn]}>
-            {processingMode.label}
-          </Text>
-        </View>
-      </View>
+      {/* ── Header ────────────────────────────────────────── */}
+      <TopAppBar
+        variant="back"
+        title="Analysis Complete"
+        subtitle={`SESSION ID #${Math.floor(Math.random() * 9999)}`}
+        onBack={onGoHome}
+      />
 
       <ScrollView
-        ref={transcriptScrollRef}
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        ref={tab === 'Transcript' ? transcriptScrollRef : undefined}
+        contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* TRANSCRIPT */}
+        {/* ── Stats Row ───────────────────────────────────── */}
+        <View style={styles.statsRow}>
+          <GlassPanel style={styles.statCard}>
+            <Text style={{ fontSize: 18, color: colors.primary }}>🎙️</Text>
+            <Text style={styles.statValue}>{result.total_speakers}</Text>
+            <Text style={styles.statLabel}>Speakers</Text>
+          </GlassPanel>
+          <GlassPanel style={styles.statCard}>
+            <Text style={{ fontSize: 18, color: colors.secondary }}>⏱️</Text>
+            <Text style={styles.statValue}>{durationText}</Text>
+            <Text style={styles.statLabel}>Duration</Text>
+          </GlassPanel>
+          <GlassPanel style={styles.statCard}>
+            <Text style={{ fontSize: 18, color: colors.tertiary }}>📊</Text>
+            <Text style={styles.statValue}>{result.sounds.length}</Text>
+            <Text style={styles.statLabel}>Events</Text>
+          </GlassPanel>
+        </View>
+
+        {/* ── Tab Bar ─────────────────────────────────────── */}
+        <View style={styles.tabBar}>
+          {tabs.map((t) => {
+            const isActive = t === tab;
+            return (
+              <Pressable
+                key={t}
+                onPress={() => setTab(t)}
+                style={[styles.tabItem, isActive && styles.tabItemActive]}
+              >
+                <Text style={{ fontSize: 14, marginRight: 4 }}>{tabIcons[t]}</Text>
+                <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+                  {t}
+                </Text>
+                {isActive && <View style={styles.tabIndicator} />}
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* ── Tab Content ─────────────────────────────────── */}
         {tab === 'Transcript' && (
-          transcriptEntries.length === 0 ? (
-            <View style={styles.empty}><Text style={styles.emptyText}>No transcript data.</Text></View>
-          ) : (
-            transcriptEntries.map((utterance, index) => (
-              <TranscriptBubble
-                key={`${utterance.speaker}-${utterance.start}-${index}`}
-                utterance={utterance}
-                speakerIndex={speakerIndexMap[utterance.speaker] ?? 0}
-              />
-            ))
-          )
+          <View style={styles.tabContent}>
+            {transcriptEntries.map((entry, i) => {
+              const speakerColor = getSpeakerColor(entry.speaker);
+              const display = speakerMatchByLabel[entry.speaker]?.display_name || entry.speaker;
+              return (
+                <GlassPanel key={i} style={[styles.transcriptBubble, { borderLeftWidth: 3, borderLeftColor: speakerColor }]}>
+                  <View style={styles.bubbleHeader}>
+                    <View style={[styles.speakerChip, { backgroundColor: `${speakerColor}15` }]}>
+                      <Text style={[styles.speakerChipText, { color: speakerColor }]}>{display}</Text>
+                    </View>
+                    <Text style={styles.bubbleTime}>{formatTimestamp(entry.start)}</Text>
+                  </View>
+                  <Text style={styles.bubbleText}>{entry.text}</Text>
+                </GlassPanel>
+              );
+            })}
+          </View>
         )}
 
-        {/* SPEAKERS */}
         {tab === 'Speakers' && (
-          <View>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Detected Speakers</Text>
-              <View style={styles.speakerChips}>
-                {result.speaker_labels.map((label, index) => {
-                  const color = speakerPalette[index % speakerPalette.length];
-                  const match = speakerMatchByLabel[label];
-                  const title =
-                    match?.display_name && match.display_name.toLowerCase() !== 'unknown'
-                      ? match.display_name
-                      : label;
-                  const confidence = Math.round((match?.confidence ?? 0) * 100);
-                  return (
-                    <View key={label} style={[styles.speakerChip, { borderColor: `${color}40`, backgroundColor: `${color}12` }]}>
-                      <View style={[styles.speakerDot, { backgroundColor: color }]} />
-                      <Text style={[styles.speakerLabel, { color }]}>{title}</Text>
-                      <Text style={styles.speakerConfidence}>{confidence}%</Text>
-                    </View>
-                  );
-                })}
+          <View style={styles.tabContent}>
+            {/* Engagement Timeline */}
+            <View style={[styles.card, { padding: spacing.lg }]}>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>Engagement Timeline</Text>
+                <Text style={styles.timeRange}>0:00 - {durationText}</Text>
+              </View>
+              <View style={styles.timelineBar}>
+                {speakerInsights.map((s) => (
+                  <View
+                    key={s.speaker}
+                    style={{
+                      height: '100%',
+                      width: `${Math.round(s.share * 100)}%`,
+                      backgroundColor: getSpeakerColor(s.speaker),
+                    }}
+                  />
+                ))}
+              </View>
+              <View style={styles.timelineLegend}>
+                {speakerInsights.map((s) => (
+                  <View key={s.speaker} style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: getSpeakerColor(s.speaker) }]} />
+                    <Text style={styles.legendText}>{s.displayName}</Text>
+                  </View>
+                ))}
               </View>
             </View>
 
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Speaker Categorization</Text>
-              {speakerInsights.map((item, index) => {
-                const color = speakerPalette[index % speakerPalette.length];
-                return (
-                  <View key={item.speaker} style={styles.categoryRow}>
-                    <View style={styles.categoryLeft}>
-                      <View style={[styles.speakerDot, { backgroundColor: color }]} />
-                      <Text style={styles.categoryName}>{item.displayName}</Text>
+            {/* Speaker Cards */}
+            {speakerInsights.map((s) => {
+              const speakerColor = getSpeakerColor(s.speaker);
+              return (
+                <View key={s.speaker} style={[styles.card, { borderLeftWidth: 4, borderLeftColor: speakerColor }]}>
+                  <View style={styles.speakerCardRow}>
+                    <View style={[styles.speakerAvatar, { backgroundColor: `${speakerColor}20`, borderColor: `${speakerColor}30` }]}>
+                      <Text style={{ fontSize: 20 }}>👤</Text>
                     </View>
-                    <View style={styles.categoryTags}>
-                      <Text style={styles.categoryTag}>{item.activityCategory}</Text>
-                      <Text style={styles.categoryTag}>{item.knownCategory}</Text>
-                      <Text style={styles.categoryShare}>{Math.round(item.share * 100)}%</Text>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={styles.speakerName}>{s.displayName}</Text>
+                        {s.matched && s.confidence > 0 && (
+                          <View style={[styles.confidenceBadge, { backgroundColor: `${speakerColor}15`, borderColor: `${speakerColor}20` }]}>
+                            <Text style={[styles.confidenceText, { color: speakerColor }]}>
+                              {Math.round(s.confidence * 100)}% CONFIDENCE
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.speakerSubtext}>
+                        {s.matched ? `Identified as ${s.displayName}` : 'Unknown Speaker'}
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.speakerDuration}>{Math.round(s.duration)}s</Text>
+                      <Text style={[styles.speakerShare, { color: speakerColor }]}>
+                        {Math.round(s.share * 100)}% SHARE
+                      </Text>
                     </View>
                   </View>
-                );
-              })}
-            </View>
-
-            <SpeakerTimeline segments={result.segments} />
+                </View>
+              );
+            })}
           </View>
         )}
 
         {tab === 'Sounds' && (
-          <View>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Background Separation</Text>
-              <Text style={styles.metaText}>
-                {result.processing.separation_confirmed ? 'Speech and background streams separated.' : 'Separation fallback mode.'}
-              </Text>
-              <Text style={styles.metaText}>
-                Speech ratio: {Math.round((result.processing.speech_energy_ratio ?? 0) * 100)}% · Background ratio: {Math.round((result.processing.background_energy_ratio ?? 0) * 100)}%
-              </Text>
-            </View>
-
-            <SoundCategoryList
-              soundEvents={categorizedSounds}
-              isLoading={false}
-            />
-
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Intensity Overview</Text>
-              <IntensityBar
-                label={`Overall Audio (RMS ${overallRmsLabel})`}
-                intensity={overallIntensity}
-              />
-            </View>
+          <View style={styles.tabContent}>
+            {ALL_CATEGORIES.map((cat) => {
+              const events = categorizedSounds.byCategory[cat];
+              if (!events || events.length === 0) return null;
+              return (
+                <View key={cat} style={styles.soundCategory}>
+                  <View style={styles.soundCategoryHeader}>
+                    <Text style={{ fontSize: 16, color: categoryIconColors[cat] }}>{categoryIcons[cat] ?? '🔉'}</Text>
+                    <Text style={styles.cardTitle}>{cat}</Text>
+                  </View>
+                  {events.map((event, i) => {
+                    const intensity = Math.round(event.score * 100);
+                    const intensityLabel = intensity > 60 ? 'High' : intensity > 30 ? 'Medium' : 'Low';
+                    const intensityColor = intensity > 60 ? colors.error : intensity > 30 ? '#F59E0B' : colors.tertiary;
+                    return (
+                      <View key={`${cat}-${i}`} style={styles.soundCard}>
+                        <View style={styles.soundCardHeader}>
+                          <View style={styles.soundCardLeft}>
+                            <View style={[styles.soundIconWrap, { backgroundColor: `${categoryIconColors[cat]}10` }]}>
+                              <Text style={{ fontSize: 16, color: categoryIconColors[cat] }}>{categoryIcons[cat]}</Text>
+                            </View>
+                            <View>
+                              <Text style={styles.soundName}>{event.label}</Text>
+                              <Text style={styles.soundMeta}>
+                                {event.startSec.toFixed(1)}s - {event.endSec.toFixed(1)}s
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                        <View style={styles.intensitySection}>
+                          <View style={styles.intensityLabelRow}>
+                            <Text style={styles.intensityLabelText}>INTENSITY</Text>
+                            <Text style={[styles.intensityValueText, { color: intensityColor }]}>
+                              {intensityLabel} ({intensity}%)
+                            </Text>
+                          </View>
+                          <View style={styles.intensityTrack}>
+                            <View style={[styles.intensityFill, { width: `${intensity}%`, backgroundColor: intensityColor }]} />
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            })}
           </View>
         )}
-
       </ScrollView>
+
+      {/* ── Bottom Nav ─────────────────────────────────────── */}
+      <BottomNavBar activeTab="home" onNavigate={handleNavigation} />
     </View>
   );
 };
 
+// ── Styles ────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.background },
+  container: { flex: 1, backgroundColor: colors.background },
+  scroll: { paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: 110 },
 
-  // Top bar
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-  },
-  screenTitle: { color: theme.textPrimary, fontSize: 17, fontWeight: '700' },
-  topActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  topActionBtn: {
-    paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1, borderColor: theme.border,
-  },
-  topActionText: { color: theme.textMuted, fontSize: 12, fontWeight: '500' },
-  homeBtn: { paddingHorizontal: 10, paddingVertical: 5 },
-  homeBtnText: { color: theme.accent, fontSize: 13, fontWeight: '500' },
+  // Stats Row
+  statsRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },
+  statCard: { flex: 1, padding: spacing.md, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  statValue: { ...typography.headlineMd, color: colors.onSurface },
+  statLabel: { ...typography.labelMd, color: colors.onSurfaceVariant },
 
-  // Stats
-  statsBar: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-    justifyContent: 'space-around',
-    alignItems: 'center',
-  },
-  statItem: { alignItems: 'center', gap: 3 },
-  statVal: { color: theme.textPrimary, fontSize: 20, fontWeight: '700' },
-  statLbl: { color: theme.textMuted, fontSize: 10, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.5 },
-  statSep: { width: 1, height: 28, backgroundColor: theme.border },
-
-  // Tabs
+  // Tab Bar
   tabBar: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-    backgroundColor: theme.background,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+    marginBottom: spacing.md,
+    gap: 4,
   },
-  tabBtn: {
-    paddingVertical: 12,
+  tabItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-    marginBottom: -1,
-  },
-  tabBtnActive: { borderBottomColor: theme.accent },
-  tabText: { color: theme.textMuted, fontSize: 14, fontWeight: '500' },
-  tabTextActive: { color: theme.textPrimary, fontWeight: '600' },
-
-  modeBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 20,
     paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-    backgroundColor: theme.background,
+    position: 'relative',
   },
-  modePrefix: {
-    color: theme.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  modeBadge: {
-    borderRadius: theme.radius.pill,
+  tabItemActive: {
+    backgroundColor: 'rgba(192, 193, 255, 0.1)',
+    borderRadius: radius.pill,
     borderWidth: 1,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
+    borderColor: 'rgba(192, 193, 255, 0.2)',
   },
-  modeBadgeOk: {
-    backgroundColor: 'rgba(34,197,94,0.12)',
-    borderColor: 'rgba(34,197,94,0.35)',
+  tabLabel: { ...typography.labelMd, color: colors.onSurfaceVariant },
+  tabLabelActive: { color: colors.primary },
+  tabIndicator: {
+    position: 'absolute',
+    bottom: -1,
+    left: '25%',
+    right: '25%',
+    height: 3,
+    backgroundColor: colors.primary,
+    borderTopLeftRadius: 2,
+    borderTopRightRadius: 2,
   },
-  modeBadgeWarn: {
-    backgroundColor: 'rgba(245,158,11,0.12)',
-    borderColor: 'rgba(245,158,11,0.35)',
-  },
-  modeBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  modeBadgeTextOk: { color: '#22C55E' },
-  modeBadgeTextWarn: { color: '#F59E0B' },
 
-  // Content
-  scroll: { flex: 1 },
-  scrollContent: { padding: 20, paddingBottom: 48 },
+  // Tab Content
+  tabContent: { gap: spacing.md },
 
+  // Card (shared)
   card: {
-    backgroundColor: theme.card,
-    borderRadius: theme.radius.lg,
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: theme.border,
-    padding: 18,
-    marginBottom: 12,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    padding: spacing.md,
   },
-  cardTitle: {
-    color: theme.textPrimary,
-    fontWeight: '600',
-    fontSize: 15,
-    marginBottom: 14,
-    letterSpacing: 0.2,
-  },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
+  cardTitle: { ...typography.headlineMd, color: colors.onSurface },
 
-  speakerChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  speakerChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 7,
-    paddingVertical: 6, paddingHorizontal: 12,
-    borderRadius: theme.radius.pill, borderWidth: 1,
-  },
-  speakerDot: { width: 7, height: 7, borderRadius: 4 },
-  speakerLabel: { fontWeight: '600', fontSize: 13 },
-  speakerConfidence: { color: theme.textMuted, fontSize: 11, fontWeight: '600' },
+  // Transcript
+  transcriptBubble: { padding: spacing.md },
+  bubbleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  speakerChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
+  speakerChipText: { ...typography.labelMd },
+  bubbleTime: { ...typography.labelMd, color: 'rgba(199, 196, 215, 0.6)', fontFamily: 'monospace' },
+  bubbleText: { ...typography.bodyMd, color: colors.onSurface, lineHeight: 22 },
 
-  categoryRow: {
+  // Speakers — Timeline
+  timeRange: { fontSize: 10, color: colors.onSurfaceVariant, fontFamily: 'monospace' },
+  timelineBar: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
+    height: 12,
+    borderRadius: radius.pill,
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceContainerHighest,
+    marginBottom: spacing.md,
   },
-  categoryLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  categoryName: {
-    color: theme.textPrimary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  categoryTags: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  categoryTag: {
-    color: theme.textMuted,
-    fontSize: 11,
-    fontWeight: '600',
+  timelineLegend: { flexDirection: 'row', gap: spacing.md, flexWrap: 'wrap' },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { fontSize: 10, color: colors.onSurfaceVariant, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  // Speaker Card
+  speakerCardRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  speakerAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: theme.radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  speakerName: { ...typography.headlineMd, color: colors.onSurface },
+  speakerSubtext: { ...typography.bodySm, color: colors.onSurfaceVariant },
+  confidenceBadge: {
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    backgroundColor: theme.surface,
-  },
-  categoryShare: {
-    color: theme.accent,
-    fontSize: 11,
-    fontWeight: '700',
-    minWidth: 30,
-    textAlign: 'right',
-  },
-
-  metaText: {
-    color: theme.textMuted,
-    fontSize: 12,
-    marginBottom: 6,
-  },
-
-  empty: {
-    backgroundColor: theme.card,
-    borderRadius: theme.radius.lg,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: theme.border,
-    padding: 36,
-    alignItems: 'center',
   },
-  emptyText: { color: theme.textMuted, fontSize: 14 },
+  confidenceText: { fontSize: 10, fontWeight: '700' },
+  speakerDuration: { ...typography.headlineMd, color: colors.onSurface },
+  speakerShare: { fontSize: 10, fontWeight: '700' },
+
+  // Sounds
+  soundCategory: { gap: spacing.sm },
+  soundCategoryHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 4 },
+  soundCard: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+  },
+  soundCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.md },
+  soundCardLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  soundIconWrap: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  soundName: { ...typography.bodyLg, color: colors.onSurface },
+  soundMeta: { fontSize: 11, color: colors.onSurfaceVariant },
+  intensitySection: { gap: 4 },
+  intensityLabelRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  intensityLabelText: { fontSize: 10, color: colors.onSurfaceVariant, fontWeight: '700', textTransform: 'uppercase' },
+  intensityValueText: { fontSize: 10, fontWeight: '700' },
+  intensityTrack: { height: 6, backgroundColor: colors.surfaceContainerHighest, borderRadius: radius.pill, overflow: 'hidden' },
+  intensityFill: { height: '100%', borderRadius: radius.pill },
 });

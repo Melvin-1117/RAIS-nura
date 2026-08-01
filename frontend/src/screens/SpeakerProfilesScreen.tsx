@@ -6,10 +6,14 @@ import {
   type AudioRecorder,
   type RecordingOptions,
 } from 'expo-audio';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, FlatList, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { theme } from '../constants/theme';
+import { BottomNavBar } from '../components/BottomNavBar';
+import { GlassPanel } from '../components/GlassPanel';
+import { TopAppBar } from '../components/TopAppBar';
+import { colors, gradients, radius, spacing, speakerPalette, typography } from '../constants/theme';
 import { useSpeakerRecognition } from '../hooks/useSpeakerRecognition';
 import { SpeakerProfile } from '../types/profiles';
 
@@ -28,7 +32,6 @@ export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScr
   const [inputFocused, setInputFocused] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // `apiBaseUrl` is no longer required for on-device profiles, but kept in props for compatibility.
   void apiBaseUrl;
 
   const ENROLLMENT_SAMPLE_TARGET = 3;
@@ -38,90 +41,43 @@ export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScr
     sampleRate: 16000,
     numberOfChannels: 1,
     bitRate: 256000,
-    android: {
-      extension: '.wav',
-      outputFormat: 'default',
-      audioEncoder: 'default',
-      sampleRate: 16000,
-    },
-    ios: {
-      extension: '.wav',
-      audioQuality: AudioQuality.HIGH,
-      sampleRate: 16000,
-      linearPCMBitDepth: 16,
-      linearPCMIsBigEndian: false,
-      linearPCMIsFloat: false,
-    },
-    web: {
-      mimeType: 'audio/webm',
-      bitsPerSecond: 128000,
-    },
+    android: { extension: '.wav', outputFormat: 'default', audioEncoder: 'default', sampleRate: 16000 },
+    ios: { extension: '.wav', audioQuality: AudioQuality.HIGH, sampleRate: 16000, linearPCMBitDepth: 16, linearPCMIsBigEndian: false, linearPCMIsFloat: false },
+    web: { mimeType: 'audio/webm', bitsPerSecond: 128000 },
   };
 
   const decodeWavToFloat32 = (buffer: ArrayBuffer): { samples: Float32Array; sampleRate: number } => {
     const view = new DataView(buffer);
     const readString = (offset: number, size: number): string => {
       let out = '';
-      for (let i = 0; i < size; i += 1) {
-        out += String.fromCharCode(view.getUint8(offset + i));
-      }
+      for (let i = 0; i < size; i += 1) out += String.fromCharCode(view.getUint8(offset + i));
       return out;
     };
-
-    if (readString(0, 4) !== 'RIFF' || readString(8, 4) !== 'WAVE') {
-      throw new Error('Enrollment recording must be a WAV PCM file.');
-    }
-
+    if (readString(0, 4) !== 'RIFF' || readString(8, 4) !== 'WAVE') throw new Error('Enrollment recording must be a WAV PCM file.');
     let offset = 12;
-    let audioFormat = 1;
-    let channels = 1;
-    let sampleRate = 16000;
-    let bitsPerSample = 16;
-    let dataOffset = -1;
-    let dataLength = 0;
-
+    let audioFormat = 1, channels = 1, sampleRate = 16000, bitsPerSample = 16, dataOffset = -1, dataLength = 0;
     while (offset + 8 <= view.byteLength) {
       const chunkId = readString(offset, 4);
       const chunkSize = view.getUint32(offset + 4, true);
       const chunkStart = offset + 8;
-
       if (chunkId === 'fmt ') {
         audioFormat = view.getUint16(chunkStart, true);
         channels = view.getUint16(chunkStart + 2, true);
         sampleRate = view.getUint32(chunkStart + 4, true);
         bitsPerSample = view.getUint16(chunkStart + 14, true);
-      } else if (chunkId === 'data') {
-        dataOffset = chunkStart;
-        dataLength = chunkSize;
-      }
-
+      } else if (chunkId === 'data') { dataOffset = chunkStart; dataLength = chunkSize; }
       offset = chunkStart + chunkSize + (chunkSize % 2);
     }
-
-    if (audioFormat !== 1) {
-      throw new Error('Only PCM WAV is supported for enrollment.');
-    }
-    if (bitsPerSample !== 16) {
-      throw new Error('Only 16-bit WAV is supported for enrollment.');
-    }
-    if (dataOffset < 0 || dataLength <= 0) {
-      throw new Error('Invalid WAV data chunk for enrollment.');
-    }
-
+    if (audioFormat !== 1) throw new Error('Only PCM WAV is supported for enrollment.');
+    if (bitsPerSample !== 16) throw new Error('Only 16-bit WAV is supported for enrollment.');
+    if (dataOffset < 0 || dataLength <= 0) throw new Error('Invalid WAV data chunk for enrollment.');
     const sampleCount = Math.floor(dataLength / 2 / channels);
     const samples = new Float32Array(sampleCount);
-    let writeIndex = 0;
-
     for (let i = 0; i < sampleCount; i += 1) {
       let mixed = 0;
-      for (let c = 0; c < channels; c += 1) {
-        const pcm = view.getInt16(dataOffset + (i * channels + c) * 2, true);
-        mixed += pcm / 32768;
-      }
-      samples[writeIndex] = mixed / channels;
-      writeIndex += 1;
+      for (let c = 0; c < channels; c += 1) mixed += view.getInt16(dataOffset + (i * channels + c) * 2, true) / 32768;
+      samples[i] = mixed / channels;
     }
-
     return { samples, sampleRate };
   };
 
@@ -129,12 +85,7 @@ export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScr
     const response = await fetch(uri);
     const buf = await response.arrayBuffer();
     const decoded = decodeWavToFloat32(buf);
-
-    if (decoded.sampleRate !== 16000) {
-      // The embedding service can resample, so only keep this as informational.
-      console.warn(`Enrollment sample rate is ${decoded.sampleRate}, resampling to 16k in embedding service.`);
-    }
-
+    if (decoded.sampleRate !== 16000) console.warn(`Enrollment sample rate is ${decoded.sampleRate}, resampling to 16k in embedding service.`);
     return decoded.samples;
   };
 
@@ -149,11 +100,7 @@ export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScr
   }, [recording, pulseAnim]);
 
   const startRecording = async () => {
-    if (Platform.OS === 'web') {
-      Alert.alert('Recording is not supported on web in this build.');
-      return;
-    }
-
+    if (Platform.OS === 'web') { Alert.alert('Recording is not supported on web in this build.'); return; }
     const perm = await requestRecordingPermissionsAsync();
     if (!perm.granted) { Alert.alert('Microphone permission required.'); return; }
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
@@ -172,15 +119,9 @@ export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScr
     const uri = recording.uri;
     setRecording(null);
     if (!uri) return;
-
     try {
       const audio = await loadWavFromUri(uri);
-      setSampleAudios((prev) => {
-        if (prev.length >= ENROLLMENT_SAMPLE_TARGET) {
-          return prev;
-        }
-        return [...prev, audio];
-      });
+      setSampleAudios((prev) => prev.length >= ENROLLMENT_SAMPLE_TARGET ? prev : [...prev, audio]);
     } catch (error: unknown) {
       Alert.alert('Invalid sample', String((error as Error)?.message ?? error));
     }
@@ -196,13 +137,10 @@ export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScr
       Alert.alert('Model is still loading', 'Wait for the ECAPA model to be ready and retry.');
       return;
     }
-
     setLoading(true);
     try {
       const profile = await enrollSpeaker(newName.trim(), sampleAudios, 16000);
-      setNewName('');
-      setSampleAudios([]);
-      setIsEnrollModalOpen(false);
+      setNewName(''); setSampleAudios([]); setIsEnrollModalOpen(false);
       Alert.alert('Speaker enrolled', `${profile.name} is ready for recognition.`);
     } catch (error: unknown) {
       Alert.alert('Enrollment failed', String((error as Error)?.message ?? error));
@@ -211,44 +149,44 @@ export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScr
     }
   };
 
-  const getInitials = (name: string) =>
-    name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  const getInitials = (name: string) => name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+
+  const handleNavigation = (tab: 'home' | 'live' | 'profiles' | 'settings') => {
+    if (tab !== 'profiles') onBack();
+  };
 
   return (
     <View style={styles.container}>
-      {/* Top bar */}
-      <View style={styles.topBar}>
-        <Pressable onPress={onBack} style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}>
-          <Text style={styles.backBtnText}>← Back</Text>
-        </Pressable>
-        <Text style={styles.screenTitle}>Speaker Profiles</Text>
-        <View style={styles.countPill}>
-          <Text style={styles.countText}>{profiles.length}</Text>
+      {/* ── Header ─────────────────────────────────────────── */}
+      <TopAppBar
+        variant="back"
+        title="Speaker Profiles"
+        onBack={onBack}
+        rightElement={
+          <Pressable
+            onPress={() => { setNewName(''); setSampleAudios([]); setIsEnrollModalOpen(true); }}
+            style={({ pressed }) => [styles.addBtn, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={styles.addBtnText}>+ Add</Text>
+          </Pressable>
+        }
+      />
+
+      {/* ── Status Row ─────────────────────────────────────── */}
+      <View style={styles.statusRow}>
+        <View style={styles.statusPulseContainer}>
+          <View style={[styles.statusPulseOuter, { backgroundColor: isReady ? colors.tertiary : colors.error }]} />
+          <View style={[styles.statusDot, { backgroundColor: isReady ? colors.tertiary : colors.error }]} />
         </View>
+        <Text style={styles.statusText}>{isReady ? 'Model Ready' : 'Loading model...'}</Text>
       </View>
 
-      <View style={styles.addCard}>
-        <Text style={styles.sectionLabel}>Enrollment</Text>
-        <Pressable
-          onPress={() => {
-            setNewName('');
-            setSampleAudios([]);
-            setIsEnrollModalOpen(true);
-          }}
-          style={({ pressed }) => [styles.addBtn, pressed && { opacity: 0.7 }]}
-        >
-          <Text style={styles.addBtnText}>Add Speaker</Text>
-        </Pressable>
-        <Text style={styles.fieldHint}>
-          {isReady ? 'Model ready for enrollment' : 'Loading ECAPA model...'}
-        </Text>
+      {/* ── Section Header ─────────────────────────────────── */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionLabel}>Enrolled Entities ({profiles.length})</Text>
       </View>
 
-      {/* Profiles list */}
-      <View style={styles.listHeader}>
-        <Text style={styles.sectionLabel}>Saved Profiles</Text>
-      </View>
-
+      {/* ── Profiles List ──────────────────────────────────── */}
       <FlatList
         data={profiles}
         keyExtractor={(item) => item.id}
@@ -256,264 +194,316 @@ export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScr
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
-          <View style={styles.emptyRow}>
-            <Text style={styles.emptyText}>No speakers enrolled yet</Text>
-          </View>
-        }
-        renderItem={({ item }) => (
-          <View style={styles.profileRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
+          <View style={styles.emptyContainer}>
+            <View style={styles.emptyIconWrap}>
+              <Text style={{ fontSize: 32, color: colors.outline }}>👤</Text>
             </View>
-            <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>{item.name}</Text>
-              <Text style={styles.profileMeta}>
-                {item.embeddings.length} samples · updated {new Date(item.updatedAt).toLocaleDateString()}
-              </Text>
-            </View>
+            <Text style={styles.emptyTitle}>No Profiles Yet</Text>
+            <Text style={styles.emptySubtitle}>
+              Enroll your first speaker to enable real-time speaker identification and analytics.
+            </Text>
             <Pressable
-              onPress={() => removeProfile(item.id)}
-              style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.6 }]}
+              onPress={() => { setNewName(''); setSampleAudios([]); setIsEnrollModalOpen(true); }}
+              style={({ pressed }) => [styles.enrollEmptyBtn, pressed && { transform: [{ scale: 0.97 }] }]}
             >
-              <Text style={styles.deleteText}>Remove</Text>
+              <LinearGradient colors={gradients.button} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.enrollEmptyBtnInner}>
+                <Text style={{ fontSize: 14 }}>👤</Text>
+                <Text style={styles.enrollEmptyBtnText}>Enroll Speaker</Text>
+              </LinearGradient>
             </Pressable>
           </View>
-        )}
+        }
+        renderItem={({ item, index }) => {
+          const profileColor = speakerPalette[index % speakerPalette.length];
+          return (
+            <View style={styles.profileCard}>
+              <View style={styles.profileLeft}>
+                <View style={[styles.avatar, { backgroundColor: `${profileColor}15`, borderColor: `${profileColor}20` }]}>
+                  <Text style={[styles.avatarText, { color: profileColor }]}>👤</Text>
+                </View>
+                <View>
+                  <Text style={styles.profileName}>{item.name}</Text>
+                  <View style={styles.profileMetaRow}>
+                    <Text style={styles.profileMeta}>{item.embeddings.length} samples</Text>
+                    <View style={[styles.metaDot, { backgroundColor: colors.outlineVariant }]} />
+                    <View style={[styles.colorTag, { backgroundColor: `${profileColor}10` }]}>
+                      <Text style={[styles.colorTagText, { color: profileColor }]}>
+                        {profileColor === speakerPalette[0] ? 'Indigo' : profileColor === speakerPalette[2] ? 'Green' : 'Tag'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+              <Pressable
+                onPress={() => removeProfile(item.id)}
+                style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.6 }]}
+              >
+                <Text style={styles.deleteIcon}>🗑️</Text>
+              </Pressable>
+            </View>
+          );
+        }}
       />
 
-      {loading ? (
-        <View style={styles.loadingRow}>
+      {loading && (
+        <View style={styles.loadingBar}>
           <Text style={styles.loadingText}>Processing enrollment...</Text>
         </View>
-      ) : null}
+      )}
 
+      {/* ── Enrollment Modal ───────────────────────────────── */}
       <Modal visible={isEnrollModalOpen} transparent animationType="fade" onRequestClose={() => setIsEnrollModalOpen(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.screenTitle}>Enroll Speaker</Text>
-
-            <TextInput
-              value={newName}
-              onChangeText={setNewName}
-              style={[styles.input, inputFocused && styles.inputFocused]}
-              placeholder="Speaker name"
-              placeholderTextColor={theme.textMuted}
-              onFocus={() => setInputFocused(true)}
-              onBlur={() => setInputFocused(false)}
-            />
-
-            <Text style={styles.profileMeta}>
-              Sample {Math.min(sampleAudios.length + 1, ENROLLMENT_SAMPLE_TARGET)} of {ENROLLMENT_SAMPLE_TARGET}
-            </Text>
-
-            {!recording ? (
-              <Pressable onPress={startRecording} style={({ pressed }) => [styles.recordBtn, pressed && { opacity: 0.7 }]}> 
-                <Animated.View style={[styles.recDot, { opacity: 1 }]} />
-                <Text style={styles.recordBtnText}>Record sample</Text>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Enroll Speaker</Text>
+              <Pressable onPress={() => setIsEnrollModalOpen(false)} style={styles.closeBtn}>
+                <Text style={styles.closeText}>×</Text>
               </Pressable>
-            ) : (
-              <Pressable onPress={stopRecording} style={({ pressed }) => [styles.stopBtn, pressed && { opacity: 0.7 }]}> 
-                <Animated.View style={[styles.recDot, { backgroundColor: theme.danger, opacity: pulseAnim }]} />
-                <Text style={styles.stopBtnText}>Stop recording</Text>
-              </Pressable>
-            )}
+            </View>
 
-            <View style={styles.sampleReadyRow}>
-              {Array.from({ length: ENROLLMENT_SAMPLE_TARGET }).map((_, idx) => (
-                <View key={idx} style={[styles.samplePill, idx < sampleAudios.length && styles.samplePillReady]}>
-                  <Text style={[styles.samplePillText, idx < sampleAudios.length && styles.samplePillTextReady]}>
-                    {idx + 1}
-                  </Text>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalLabel}>Speaker Name</Text>
+              <TextInput
+                value={newName}
+                onChangeText={setNewName}
+                style={[styles.input, inputFocused && styles.inputFocused]}
+                placeholder="Enter speaker name"
+                placeholderTextColor={colors.outline}
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setInputFocused(false)}
+              />
+
+              <View style={styles.samplesHeader}>
+                <Text style={styles.samplesText}>Samples: {sampleAudios.length} / {ENROLLMENT_SAMPLE_TARGET}</Text>
+                <View style={styles.dotsRow}>
+                  {Array.from({ length: ENROLLMENT_SAMPLE_TARGET }).map((_, idx) => (
+                    <View key={idx} style={[styles.progressDot, idx < sampleAudios.length && styles.progressDotReady]} />
+                  ))}
                 </View>
-              ))}
+              </View>
+
+              <View style={styles.recordContainer}>
+                {!recording ? (
+                  <Pressable onPress={startRecording} style={({ pressed }) => [styles.micBtn, pressed && { opacity: 0.8 }]}>
+                    <Text style={{ fontSize: 28 }}>🎙️</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable onPress={stopRecording} style={({ pressed }) => [styles.stopBtn, pressed && { opacity: 0.8 }]}>
+                    <Animated.View style={[styles.stopInner, { transform: [{ scale: pulseAnim }] }]}>
+                      <View style={styles.stopSquare} />
+                    </Animated.View>
+                  </Pressable>
+                )}
+                <Text style={styles.recordHint}>
+                  {recording ? 'Recording sample...' : 'Tap to record a 3–5 second voice sample. Record 3 samples for accuracy.'}
+                </Text>
+              </View>
             </View>
 
-            <View style={styles.modalActions}>
-              <Pressable
-                onPress={() => setIsEnrollModalOpen(false)}
-                style={({ pressed }) => [styles.cancelBtn, pressed && { opacity: 0.7 }]}
+            <Pressable
+              onPress={addProfile}
+              disabled={sampleAudios.length < ENROLLMENT_SAMPLE_TARGET}
+              style={({ pressed }) => [
+                styles.enrollCta,
+                sampleAudios.length < ENROLLMENT_SAMPLE_TARGET && { opacity: 0.4 },
+                pressed && { transform: [{ scale: 0.97 }] },
+              ]}
+            >
+              <LinearGradient
+                colors={sampleAudios.length < ENROLLMENT_SAMPLE_TARGET ? ['rgba(99,102,241,0.2)', 'rgba(79,70,229,0.2)'] : gradients.button}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.enrollCtaInner}
               >
-                <Text style={styles.backBtnText}>Cancel</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={addProfile}
-                style={({ pressed }) => [styles.addBtn, pressed && { opacity: 0.7 }]}
-              >
-                <Text style={styles.addBtnText}>Enroll</Text>
-              </Pressable>
-            </View>
+                <Text style={[styles.enrollCtaText, sampleAudios.length < ENROLLMENT_SAMPLE_TARGET && { color: colors.outline }]}>
+                  Enroll Speaker
+                </Text>
+              </LinearGradient>
+            </Pressable>
           </View>
         </View>
       </Modal>
+
+      {/* ── Bottom Nav ─────────────────────────────────────── */}
+      <BottomNavBar activeTab="profiles" onNavigate={handleNavigation} />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.background },
+  container: { flex: 1, backgroundColor: colors.background },
 
-  topBar: {
+  // Add button
+  addBtn: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
+    gap: 4,
   },
-  backBtn: { paddingVertical: 6, paddingRight: 12 },
-  backBtnText: { color: theme.textMuted, fontSize: 14, fontWeight: '500' },
-  screenTitle: { color: theme.textPrimary, fontSize: 17, fontWeight: '700', flex: 1 },
-  countPill: {
-    minWidth: 24, height: 24, borderRadius: 12,
-    backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border,
-    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8,
-  },
-  countText: { color: theme.textSecondary, fontSize: 12, fontWeight: '600' },
+  addBtnText: { color: colors.onPrimary, ...typography.labelMd, fontWeight: '700' },
 
-  addCard: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-  },
-  fieldHint: { color: theme.textMuted, fontSize: 12, marginTop: 8 },
-  sectionLabel: {
-    color: theme.textMuted,
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 10,
-  },
-  input: {
-    color: theme.textPrimary,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderRadius: theme.radius.md,
+  // Status row
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.surfaceContainerLow,
+    padding: 16,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.md,
+    borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: theme.border,
-    backgroundColor: theme.card,
-    fontSize: 14,
-    marginBottom: 10,
+    borderColor: colors.border,
   },
-  inputFocused: { borderColor: theme.accent },
+  statusPulseContainer: { width: 12, height: 12, justifyContent: 'center', alignItems: 'center' },
+  statusPulseOuter: { position: 'absolute', width: 12, height: 12, borderRadius: 6, opacity: 0.5 },
+  statusDot: { width: 12, height: 12, borderRadius: 6 },
+  statusText: { ...typography.bodyMd, color: colors.onSurfaceVariant },
 
-  recordBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
-    padding: 11, borderRadius: theme.radius.md,
-    backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border,
-  },
-  recDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.danger },
-  recordBtnText: { color: theme.textPrimary, fontSize: 14, fontWeight: '500' },
-  stopBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
-    padding: 11, borderRadius: theme.radius.md,
-    backgroundColor: `${theme.danger}12`,
-    borderWidth: 1, borderColor: `${theme.danger}30`,
-  },
-  stopBtnText: { color: theme.danger, fontSize: 14, fontWeight: '500' },
-  addBtn: {
-    paddingHorizontal: 20, paddingVertical: 11,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.accent,
-  },
-  addBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  // Section header
+  sectionHeader: { paddingHorizontal: spacing.md, paddingVertical: spacing.md },
+  sectionLabel: { ...typography.labelMd, color: colors.outline, textTransform: 'uppercase', letterSpacing: 1.2 },
 
-  sampleReadyRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  samplePill: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+  // List
+  list: { flex: 1 },
+  listContent: { paddingHorizontal: spacing.md, paddingBottom: 110, gap: spacing.sm },
+
+  // Empty
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.surfaceContainerLowest,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: colors.outlineVariant,
+    marginTop: spacing.xl,
+  },
+  emptyIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.surfaceContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: theme.border,
-    backgroundColor: theme.card,
+    borderColor: colors.border,
+  },
+  emptyTitle: { ...typography.headlineMd, color: colors.onSurface, marginBottom: 8 },
+  emptySubtitle: { ...typography.bodyMd, color: colors.onSurfaceVariant, textAlign: 'center', maxWidth: 280, marginBottom: spacing.lg },
+  enrollEmptyBtn: { borderRadius: radius.pill, overflow: 'hidden' },
+  enrollEmptyBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 32, paddingVertical: 14 },
+  enrollEmptyBtnText: { color: colors.white, ...typography.headlineMd, fontSize: 16 },
+
+  // Profile Card
+  profileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.md,
+    backgroundColor: colors.surfaceContainer,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  profileLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  samplePillReady: {
-    borderColor: `${theme.accentGreen}66`,
-    backgroundColor: `${theme.accentGreen}22`,
-  },
-  samplePillText: { color: theme.textMuted, fontSize: 11, fontWeight: '700' },
-  samplePillTextReady: { color: theme.accentGreen },
+  avatarText: { fontSize: 24 },
+  profileName: { ...typography.headlineMd, color: colors.onSurface },
+  profileMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
+  profileMeta: { ...typography.bodySm, color: colors.onSurfaceVariant },
+  metaDot: { width: 4, height: 4, borderRadius: 2 },
+  colorTag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  colorTagText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
+  deleteBtn: { padding: 12, borderRadius: radius.xl },
+  deleteIcon: { fontSize: 18 },
 
-  listHeader: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
-  list: { flex: 1 },
-  listContent: { paddingHorizontal: 20, paddingBottom: 48 },
+  // Loading
+  loadingBar: { paddingVertical: 8, alignItems: 'center' },
+  loadingText: { ...typography.bodySm, color: colors.onSurfaceVariant },
 
-  emptyRow: { paddingVertical: 36, alignItems: 'center' },
-  emptyText: { color: theme.textMuted, fontSize: 14 },
-
-  profileRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-    gap: 14,
-  },
-  avatar: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: `${theme.accent}20`,
-    borderWidth: 1, borderColor: `${theme.accent}30`,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatarText: { color: theme.accent, fontWeight: '700', fontSize: 14 },
-  profileInfo: { flex: 1 },
-  profileName: { color: theme.textPrimary, fontWeight: '600', fontSize: 14 },
-  profileMeta: { color: theme.textMuted, fontSize: 11, marginTop: 2 },
-  deleteBtn: {
-    paddingHorizontal: 12, paddingVertical: 5,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1, borderColor: `${theme.danger}30`,
-    backgroundColor: `${theme.danger}10`,
-  },
-  deleteText: { color: theme.danger, fontSize: 12, fontWeight: '600' },
-
-  loadingRow: {
-    position: 'absolute',
-    bottom: 16,
-    alignSelf: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.card,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  loadingText: {
-    color: theme.textMuted,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-
+  // Modal
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
   },
   modalCard: {
-    width: '100%',
-    backgroundColor: theme.background,
-    borderRadius: theme.radius.lg,
+    backgroundColor: colors.surfaceContainerHigh,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: theme.border,
-    padding: 16,
-    gap: 10,
+    borderColor: colors.border,
+    overflow: 'hidden',
   },
-  modalActions: {
+  modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 8,
+    alignItems: 'center',
+    padding: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  cancelBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: theme.radius.md,
+  modalTitle: { ...typography.headlineLg, color: colors.onSurface },
+  closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
+  closeText: { color: colors.outline, fontSize: 20, fontWeight: '500' },
+  modalContent: { padding: spacing.lg, gap: spacing.md },
+  modalLabel: { ...typography.labelMd, color: colors.onSurfaceVariant, textTransform: 'uppercase', marginBottom: 4 },
+  input: {
+    backgroundColor: colors.surfaceContainerLow,
     borderWidth: 1,
-    borderColor: theme.border,
-    backgroundColor: theme.card,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: 14,
+    color: colors.primary,
+    fontFamily: 'monospace',
+    fontSize: 14,
   },
+  inputFocused: { borderColor: 'rgba(192, 193, 255, 0.5)' },
+  samplesHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  samplesText: { ...typography.bodySm, color: colors.onSurfaceVariant },
+  dotsRow: { flexDirection: 'row', gap: 6 },
+  progressDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.surfaceContainerHighest, borderWidth: 1, borderColor: colors.border },
+  progressDotReady: { backgroundColor: colors.tertiary, borderColor: colors.tertiary },
+  recordContainer: { alignItems: 'center', gap: 12 },
+  micBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    borderWidth: 2,
+    borderColor: 'rgba(99, 102, 241, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stopBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(255, 180, 171, 0.15)',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 180, 171, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stopInner: { alignItems: 'center', justifyContent: 'center' },
+  stopSquare: { width: 20, height: 20, borderRadius: 4, backgroundColor: colors.error },
+  recordHint: { ...typography.bodySm, color: colors.onSurfaceVariant, textAlign: 'center', maxWidth: 260 },
+  enrollCta: { margin: spacing.lg, borderRadius: radius.pill, overflow: 'hidden' },
+  enrollCtaInner: { alignItems: 'center', justifyContent: 'center', paddingVertical: 16 },
+  enrollCtaText: { color: colors.white, ...typography.headlineMd, fontSize: 16 },
 });

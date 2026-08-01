@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     whisper_api_base_url: str = "https://api.openai.com/v1"
     whisper_model: str = "whisper-1"
     whisper_timeout_seconds: float = 180.0
-    local_asr_model: str = "distil-whisper/distil-large-v3"
+    local_asr_model: str = "distil-whisper/distil-small.en"
     local_asr_chunk_length_seconds: int = 10
     local_asr_batch_size: int = 2
     local_asr_num_beams: int = 5
