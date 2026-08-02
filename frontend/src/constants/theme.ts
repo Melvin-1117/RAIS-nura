@@ -208,6 +208,18 @@ export const speakerPalette = [
   '#EF4444',
 ];
 
+export const getSpeakerColor = (speakerId: string): string => {
+  if (!speakerId) return speakerPalette[0];
+  let hash = 0;
+  for (let i = 0; i < speakerId.length; i++) {
+    hash = (hash << 5) - hash + speakerId.charCodeAt(i);
+    hash |= 0;
+  }
+  const index = Math.abs(hash) % speakerPalette.length;
+  return speakerPalette[index];
+};
+
+
 export const categoryEmojis: Record<string, string> = {
   Natural: '🌿',
   Artificial: '⚙️',

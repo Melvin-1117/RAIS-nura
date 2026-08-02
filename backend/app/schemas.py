@@ -12,12 +12,12 @@ class SegmentOut(BaseModel):
 
 
 class UtteranceOut(BaseModel):
-    start: float
-    end: float
-    speaker: str
-    speaker_display: str
-    speaker_confidence: float
-    text: str
+    speaker: str = Field(..., description="Speaker label matching M1 ID (e.g. A or Speaker A)")
+    text: str = Field(..., description="Transcribed text for the utterance")
+    start: float = Field(..., description="Utterance start time in seconds")
+    end: float = Field(..., description="Utterance end time in seconds")
+    speaker_display: str = Field("Unknown", description="Resolved speaker display name")
+    speaker_confidence: float = Field(0.0, description="Confidence score for speaker recognition")
 
 
 class SoundEventOut(BaseModel):

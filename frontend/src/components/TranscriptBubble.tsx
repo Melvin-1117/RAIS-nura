@@ -1,88 +1,137 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { speakerPalette, theme } from '../constants/theme';
+import { colors, getSpeakerColor, radius, spacing, theme, typography } from '../constants/theme';
 import { Utterance } from '../types/diarization';
-import { formatSeconds } from '../utils/time';
+import { formatHHMMSS } from '../utils/time';
 
 type TranscriptBubbleProps = {
   utterance: Utterance;
   speakerIndex: number;
+  speakerColor?: string;
+  isTwoSpeakerMode?: boolean;
 };
 
-export const TranscriptBubble = ({ utterance, speakerIndex }: TranscriptBubbleProps) => {
-  const color = speakerPalette[speakerIndex % speakerPalette.length];
+export const TranscriptBubble = ({
+  utterance,
+  speakerIndex,
+  speakerColor,
+  isTwoSpeakerMode = false,
+}: TranscriptBubbleProps) => {
+  const color = speakerColor || getSpeakerColor(utterance.speaker);
   const transcriptText = utterance.text?.trim() ?? '';
   const speakerText =
     utterance.speaker_display && utterance.speaker_display.toLowerCase() !== 'unknown'
       ? utterance.speaker_display
       : utterance.speaker;
-  const confidence = Math.round((utterance.speaker_confidence ?? 0) * 100);
+
+  const isRightAligned = isTwoSpeakerMode && speakerIndex % 2 === 1;
 
   return (
-    <View style={styles.row}>
-      {/* Colored speaker stripe */}
-      <View style={[styles.stripe, { backgroundColor: color }]} />
-      <View style={styles.bubble}>
+    <View
+      style={[
+        styles.container,
+        isTwoSpeakerMode ? styles.twoSpeakerContainer : styles.fullWidthContainer,
+        isRightAligned ? styles.alignRight : styles.alignLeft,
+      ]}
+    >
+      <View
+        style={[
+          styles.bubble,
+          {
+            borderLeftColor: isRightAligned ? theme.border : color,
+            borderRightColor: isRightAligned ? color : theme.border,
+            borderLeftWidth: isRightAligned ? 1 : 3,
+            borderRightWidth: isRightAligned ? 3 : 1,
+          },
+        ]}
+      >
+        {/* Header: Colored Speaker Badge */}
         <View style={styles.header}>
-          <Text style={[styles.speaker, { color }]}>{speakerText}</Text>
-          <Text style={styles.confidence}>{confidence}%</Text>
+          <View style={[styles.speakerBadge, { backgroundColor: `${color}20`, borderColor: `${color}35` }]}>
+            <Text style={[styles.speakerBadgeText, { color }]}>{speakerText}</Text>
+          </View>
         </View>
-        {transcriptText ? <Text style={styles.text}>{transcriptText}</Text> : null}
-        <Text style={styles.time}>
-          {formatSeconds(utterance.start)} – {formatSeconds(utterance.end)}
-        </Text>
+
+        {/* Transcribed Text */}
+        {transcriptText ? (
+          <Text style={styles.text}>{transcriptText}</Text>
+        ) : (
+          <Text style={styles.emptyText}>(no text recorded)</Text>
+        )}
+
+        {/* Timestamp formatted as HH:MM:SS */}
+        <View style={styles.footer}>
+          <Text style={styles.timeText}>
+            ⏱️ {formatHHMMSS(utterance.start)} – {formatHHMMSS(utterance.end)}
+          </Text>
+        </View>
       </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    marginBottom: 10,
-    backgroundColor: theme.card,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.border,
-    overflow: 'hidden',
+  container: {
+    marginVertical: 4,
   },
-  stripe: {
-    width: 3,
-    borderTopLeftRadius: theme.radius.md,
-    borderBottomLeftRadius: theme.radius.md,
+  fullWidthContainer: {
+    width: '100%',
+  },
+  twoSpeakerContainer: {
+    maxWidth: '85%',
+  },
+  alignLeft: {
+    alignSelf: 'flex-start',
+  },
+  alignRight: {
+    alignSelf: 'flex-end',
   },
   bubble: {
-    flex: 1,
-    padding: 14,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: theme.border,
+    padding: spacing.md,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
   },
-  speaker: {
-    fontSize: 12,
+  speakerBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  speakerBadgeText: {
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
-  confidence: {
-    color: theme.textMuted,
-    fontSize: 11,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  time: {
-    color: theme.textMuted,
-    fontSize: 11,
-    fontWeight: '500',
-    marginTop: 8,
-  },
   text: {
-    color: theme.textPrimary,
-    fontSize: 14,
+    ...typography.bodyMd,
+    color: colors.onSurface,
     lineHeight: 22,
     fontWeight: '400',
+  },
+  emptyText: {
+    ...typography.bodySm,
+    color: colors.onSurfaceVariant,
+    fontStyle: 'italic',
+  },
+  footer: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timeText: {
+    fontSize: 11,
+    color: 'rgba(199, 196, 215, 0.6)',
+    fontFamily: 'monospace',
+    fontWeight: '500',
   },
 });

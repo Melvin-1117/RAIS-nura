@@ -1,16 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { BottomNavBar } from '../components/BottomNavBar';
 import { GlassPanel } from '../components/GlassPanel';
 import { TopAppBar } from '../components/TopAppBar';
-import { colors, radius, spacing, speakerPalette, typography } from '../constants/theme';
-import { formatTimestamp } from '../utils/time';
-import { DiarizationResponse } from '../types/diarization';
+import { TranscriptBubble } from '../components/TranscriptBubble';
+import { colors, getSpeakerColor, radius, spacing, typography } from '../constants/theme';
+import { DiarizationResponse, Utterance } from '../types/diarization';
 import { ALL_CATEGORIES, CategorizedSoundEvents, SoundCategory } from '../types/soundCategories';
 
 type ResultsScreenProps = {
-  result: DiarizationResponse;
+  result?: DiarizationResponse;
+  isLoading?: boolean;
   onGoHome: () => void;
   onOpenProfiles: () => void;
   onOpenSettings: () => void;
@@ -20,7 +21,6 @@ type TabKey = 'Transcript' | 'Speakers' | 'Sounds';
 const tabs: TabKey[] = ['Transcript', 'Speakers', 'Sounds'];
 const tabIcons: Record<TabKey, string> = { Transcript: '📝', Speakers: '👥', Sounds: '🔊' };
 
-// ── Category display config ─────────────────────────────────────────────────
 const categoryIcons: Record<string, string> = {
   Natural: '🌿',
   Artificial: '⚙️',
@@ -28,6 +28,7 @@ const categoryIcons: Record<string, string> = {
   Music: '🎵',
   Animal: '🐾',
 };
+
 const categoryIconColors: Record<string, string> = {
   Natural: colors.tertiary,
   Artificial: colors.secondary,
@@ -36,51 +37,101 @@ const categoryIconColors: Record<string, string> = {
   Animal: colors.tertiary,
 };
 
+// ── Loading Skeleton ────────────────────────────────────────────────────────
+const TranscriptSkeletonList = () => (
+  <View style={styles.skeletonContainer}>
+    {[0, 1, 2, 3].map((key) => (
+      <View
+        key={key}
+        style={[
+          styles.skeletonBubble,
+          key % 2 === 1 ? styles.skeletonAlignRight : styles.skeletonAlignLeft,
+        ]}
+      >
+        <View style={styles.skeletonBadge} />
+        <View style={styles.skeletonTextLineLong} />
+        <View style={styles.skeletonTextLineShort} />
+      </View>
+    ))}
+  </View>
+);
+
+// ── Empty State ─────────────────────────────────────────────────────────────
+const TranscriptEmptyState = () => (
+  <GlassPanel style={styles.emptyCard}>
+    <Text style={styles.emptyIcon}>🔇</Text>
+    <Text style={styles.emptyTitle}>No speech detected</Text>
+    <Text style={styles.emptySubtext}>
+      No spoken words or voice segments were detected in this audio recording.
+    </Text>
+  </GlassPanel>
+);
+
 export const ResultsScreen = ({
   result,
+  isLoading = false,
   onGoHome,
   onOpenProfiles,
   onOpenSettings,
 }: ResultsScreenProps) => {
   const [tab, setTab] = useState<TabKey>('Transcript');
-  const transcriptScrollRef = useRef<ScrollView>(null);
+  const flatListRef = useRef<FlatList<Utterance>>(null);
+  const hasScrolledRef = useRef(false);
 
-  // ── Derived data ──────────────────────────────────────────────────────────
+  // ── Utterance entries ─────────────────────────────────────────────────────
   const transcriptEntries = useMemo(() => {
-    const entries = result.utterances.length > 0
-      ? result.utterances
-      : result.segments.map((segment) => ({
-        start: segment.start,
-        end: segment.end,
-        speaker: segment.speaker,
-        text: 'Speech detected in this segment.',
-      }));
-    return [...entries].sort((a, b) => a.start !== b.start ? a.start - b.start : a.end - b.end);
-  }, [result.segments, result.utterances]);
+    if (!result) return [];
+    const entries: Utterance[] =
+      result.utterances && result.utterances.length > 0
+        ? result.utterances
+        : result.segments.map((segment) => ({
+            start: segment.start,
+            end: segment.end,
+            speaker: segment.speaker,
+            speaker_display: segment.speaker_display,
+            speaker_confidence: segment.speaker_confidence,
+            text: 'Speech detected in this segment.',
+          }));
 
+    return [...entries].sort((a, b) => (a.start !== b.start ? a.start - b.start : a.end - b.end));
+  }, [result]);
+
+  // Auto-scroll to latest utterance when list first loads
   useEffect(() => {
-    if (tab !== 'Transcript') return;
+    if (tab !== 'Transcript' || transcriptEntries.length === 0 || hasScrolledRef.current) return;
+    hasScrolledRef.current = true;
     const timer = setTimeout(() => {
-      transcriptScrollRef.current?.scrollToEnd({ animated: true });
-    }, 0);
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 200);
     return () => clearTimeout(timer);
   }, [tab, transcriptEntries]);
 
   const speakerIndexMap = useMemo(() => {
+    if (!result) return {};
     const map: Record<string, number> = {};
-    result.speaker_labels.forEach((speaker, index) => { map[speaker] = index; });
+    result.speaker_labels.forEach((speaker, index) => {
+      map[speaker] = index;
+    });
     return map;
-  }, [result.speaker_labels]);
+  }, [result]);
+
+  const isTwoSpeakerMode = useMemo(() => {
+    if (!result) return false;
+    const count = result.total_speakers || result.speaker_labels?.length || 0;
+    return count === 2;
+  }, [result]);
 
   const speakerMatchByLabel = useMemo(() => {
+    if (!result) return {};
     const map: Record<string, { display_name: string; confidence: number; matched: boolean }> = {};
     for (const match of result.speaker_matches ?? []) {
       map[match.speaker] = match;
     }
     return map;
-  }, [result.speaker_matches]);
+  }, [result]);
 
   const speakerInsights = useMemo(() => {
+    if (!result) return [];
     const totals: Record<string, number> = {};
     for (const segment of result.segments) {
       const duration = Math.max(0, segment.end - segment.start);
@@ -89,7 +140,7 @@ export const ResultsScreen = ({
     const ranked = Object.entries(totals)
       .map(([speaker, duration]) => ({ speaker, duration }))
       .sort((a, b) => b.duration - a.duration);
-    const fullDuration = Math.max(1, result.processing.duration_seconds || 1);
+    const fullDuration = Math.max(1, result.processing?.duration_seconds || 1);
     return ranked.map((item) => {
       const share = item.duration / fullDuration;
       const match = speakerMatchByLabel[item.speaker];
@@ -106,12 +157,15 @@ export const ResultsScreen = ({
         matched: match?.matched ?? false,
       };
     });
-  }, [result.processing.duration_seconds, result.segments, speakerMatchByLabel]);
+  }, [result, speakerMatchByLabel]);
 
   const categorizedSounds = useMemo((): CategorizedSoundEvents => {
+    if (!result) return { frames: [], byCategory: {} as any, summary: [] };
     const byCategory = {} as Record<SoundCategory, CategorizedSoundEvents['frames']>;
-    for (const cat of ALL_CATEGORIES) { byCategory[cat] = []; }
-    for (const event of result.sounds) {
+    for (const cat of ALL_CATEGORIES) {
+      byCategory[cat] = [];
+    }
+    for (const event of result.sounds || []) {
       const cat = (event.category as SoundCategory) || 'Artificial';
       if (byCategory[cat]) {
         byCategory[cat].push({
@@ -124,19 +178,15 @@ export const ResultsScreen = ({
       }
     }
     return { frames: [], byCategory, summary: [] };
-  }, [result.sounds]);
+  }, [result]);
 
   const durationText = useMemo(() => {
-    const s = result.processing.duration_seconds;
+    if (!result) return '0m 0s';
+    const s = result.processing?.duration_seconds || 0;
     const m = Math.floor(s / 60);
     const sec = Math.round(s % 60);
     return `${m}m ${sec}s`;
-  }, [result.processing.duration_seconds]);
-
-  const getSpeakerColor = (speaker: string) => {
-    const idx = speakerIndexMap[speaker] ?? 0;
-    return speakerPalette[idx % speakerPalette.length];
-  };
+  }, [result]);
 
   const handleNavigation = (navTab: 'home' | 'live' | 'profiles' | 'settings') => {
     if (navTab === 'home') onGoHome();
@@ -144,9 +194,22 @@ export const ResultsScreen = ({
     else if (navTab === 'settings') onOpenSettings();
   };
 
+  const renderTranscriptItem = ({ item }: { item: Utterance }) => {
+    const idx = speakerIndexMap[item.speaker] ?? 0;
+    const color = getSpeakerColor(item.speaker);
+    return (
+      <TranscriptBubble
+        utterance={item}
+        speakerIndex={idx}
+        speakerColor={color}
+        isTwoSpeakerMode={isTwoSpeakerMode}
+      />
+    );
+  };
+
   return (
     <View style={styles.container}>
-      {/* ── Header ────────────────────────────────────────── */}
+      {/* Header */}
       <TopAppBar
         variant="back"
         title="Analysis Complete"
@@ -154,16 +217,12 @@ export const ResultsScreen = ({
         onBack={onGoHome}
       />
 
-      <ScrollView
-        ref={tab === 'Transcript' ? transcriptScrollRef : undefined}
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── Stats Row ───────────────────────────────────── */}
+      <View style={styles.mainContent}>
+        {/* Stats Row */}
         <View style={styles.statsRow}>
           <GlassPanel style={styles.statCard}>
             <Text style={{ fontSize: 18, color: colors.primary }}>🎙️</Text>
-            <Text style={styles.statValue}>{result.total_speakers}</Text>
+            <Text style={styles.statValue}>{result?.total_speakers ?? 0}</Text>
             <Text style={styles.statLabel}>Speakers</Text>
           </GlassPanel>
           <GlassPanel style={styles.statCard}>
@@ -173,12 +232,12 @@ export const ResultsScreen = ({
           </GlassPanel>
           <GlassPanel style={styles.statCard}>
             <Text style={{ fontSize: 18, color: colors.tertiary }}>📊</Text>
-            <Text style={styles.statValue}>{result.sounds.length}</Text>
+            <Text style={styles.statValue}>{result?.sounds?.length ?? 0}</Text>
             <Text style={styles.statLabel}>Events</Text>
           </GlassPanel>
         </View>
 
-        {/* ── Tab Bar ─────────────────────────────────────── */}
+        {/* Tab Bar */}
         <View style={styles.tabBar}>
           {tabs.map((t) => {
             const isActive = t === tab;
@@ -189,167 +248,214 @@ export const ResultsScreen = ({
                 style={[styles.tabItem, isActive && styles.tabItemActive]}
               >
                 <Text style={{ fontSize: 14, marginRight: 4 }}>{tabIcons[t]}</Text>
-                <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
-                  {t}
-                </Text>
+                <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{t}</Text>
                 {isActive && <View style={styles.tabIndicator} />}
               </Pressable>
             );
           })}
         </View>
 
-        {/* ── Tab Content ─────────────────────────────────── */}
+        {/* Tab Content */}
         {tab === 'Transcript' && (
-          <View style={styles.tabContent}>
-            {transcriptEntries.map((entry, i) => {
-              const speakerColor = getSpeakerColor(entry.speaker);
-              const display = speakerMatchByLabel[entry.speaker]?.display_name || entry.speaker;
-              return (
-                <GlassPanel key={i} style={[styles.transcriptBubble, { borderLeftWidth: 3, borderLeftColor: speakerColor }]}>
-                  <View style={styles.bubbleHeader}>
-                    <View style={[styles.speakerChip, { backgroundColor: `${speakerColor}15` }]}>
-                      <Text style={[styles.speakerChipText, { color: speakerColor }]}>{display}</Text>
-                    </View>
-                    <Text style={styles.bubbleTime}>{formatTimestamp(entry.start)}</Text>
-                  </View>
-                  <Text style={styles.bubbleText}>{entry.text}</Text>
-                </GlassPanel>
-              );
-            })}
+          <View style={styles.transcriptTabWrapper}>
+            {isLoading ? (
+              <TranscriptSkeletonList />
+            ) : transcriptEntries.length === 0 ? (
+              <TranscriptEmptyState />
+            ) : (
+              <FlatList
+                ref={flatListRef}
+                data={transcriptEntries}
+                renderItem={renderTranscriptItem}
+                keyExtractor={(item, idx) => `${item.speaker}-${item.start}-${idx}`}
+                contentContainerStyle={styles.flatListPadding}
+                showsVerticalScrollIndicator={false}
+              />
+            )}
           </View>
         )}
 
         {tab === 'Speakers' && (
-          <View style={styles.tabContent}>
-            {/* Engagement Timeline */}
-            <View style={[styles.card, { padding: spacing.lg }]}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle}>Engagement Timeline</Text>
-                <Text style={styles.timeRange}>0:00 - {durationText}</Text>
+          <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+            <View style={styles.tabContent}>
+              {/* Engagement Timeline */}
+              <View style={[styles.card, { padding: spacing.lg }]}>
+                <View style={styles.cardHeader}>
+                  <Text style={styles.cardTitle}>Engagement Timeline</Text>
+                  <Text style={styles.timeRange}>0:00 - {durationText}</Text>
+                </View>
+                <View style={styles.timelineBar}>
+                  {speakerInsights.map((s) => (
+                    <View
+                      key={s.speaker}
+                      style={{
+                        height: '100%',
+                        width: `${Math.round(s.share * 100)}%`,
+                        backgroundColor: getSpeakerColor(s.speaker),
+                      }}
+                    />
+                  ))}
+                </View>
+                <View style={styles.timelineLegend}>
+                  {speakerInsights.map((s) => (
+                    <View key={s.speaker} style={styles.legendItem}>
+                      <View
+                        style={[
+                          styles.legendDot,
+                          { backgroundColor: getSpeakerColor(s.speaker) },
+                        ]}
+                      />
+                      <Text style={styles.legendText}>{s.displayName}</Text>
+                    </View>
+                  ))}
+                </View>
               </View>
-              <View style={styles.timelineBar}>
-                {speakerInsights.map((s) => (
+
+              {/* Speaker Cards */}
+              {speakerInsights.map((s) => {
+                const speakerColor = getSpeakerColor(s.speaker);
+                return (
                   <View
                     key={s.speaker}
-                    style={{
-                      height: '100%',
-                      width: `${Math.round(s.share * 100)}%`,
-                      backgroundColor: getSpeakerColor(s.speaker),
-                    }}
-                  />
-                ))}
-              </View>
-              <View style={styles.timelineLegend}>
-                {speakerInsights.map((s) => (
-                  <View key={s.speaker} style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: getSpeakerColor(s.speaker) }]} />
-                    <Text style={styles.legendText}>{s.displayName}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-
-            {/* Speaker Cards */}
-            {speakerInsights.map((s) => {
-              const speakerColor = getSpeakerColor(s.speaker);
-              return (
-                <View key={s.speaker} style={[styles.card, { borderLeftWidth: 4, borderLeftColor: speakerColor }]}>
-                  <View style={styles.speakerCardRow}>
-                    <View style={[styles.speakerAvatar, { backgroundColor: `${speakerColor}20`, borderColor: `${speakerColor}30` }]}>
-                      <Text style={{ fontSize: 20 }}>👤</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={styles.speakerName}>{s.displayName}</Text>
-                        {s.matched && s.confidence > 0 && (
-                          <View style={[styles.confidenceBadge, { backgroundColor: `${speakerColor}15`, borderColor: `${speakerColor}20` }]}>
-                            <Text style={[styles.confidenceText, { color: speakerColor }]}>
-                              {Math.round(s.confidence * 100)}% CONFIDENCE
-                            </Text>
-                          </View>
-                        )}
+                    style={[styles.card, { borderLeftWidth: 4, borderLeftColor: speakerColor }]}
+                  >
+                    <View style={styles.speakerCardRow}>
+                      <View
+                        style={[
+                          styles.speakerAvatar,
+                          {
+                            backgroundColor: `${speakerColor}20`,
+                            borderColor: `${speakerColor}30`,
+                          },
+                        ]}
+                      >
+                        <Text style={{ fontSize: 20 }}>👤</Text>
                       </View>
-                      <Text style={styles.speakerSubtext}>
-                        {s.matched ? `Identified as ${s.displayName}` : 'Unknown Speaker'}
-                      </Text>
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={styles.speakerDuration}>{Math.round(s.duration)}s</Text>
-                      <Text style={[styles.speakerShare, { color: speakerColor }]}>
-                        {Math.round(s.share * 100)}% SHARE
-                      </Text>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text style={styles.speakerName}>{s.displayName}</Text>
+                          {s.matched && s.confidence > 0 && (
+                            <View
+                              style={[
+                                styles.confidenceBadge,
+                                {
+                                  backgroundColor: `${speakerColor}15`,
+                                  borderColor: `${speakerColor}20`,
+                                },
+                              ]}
+                            >
+                              <Text style={[styles.confidenceText, { color: speakerColor }]}>
+                                {Math.round(s.confidence * 100)}% CONFIDENCE
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.speakerSubtext}>
+                          {s.matched ? `Identified as ${s.displayName}` : 'Unknown Speaker'}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text style={styles.speakerDuration}>{Math.round(s.duration)}s</Text>
+                        <Text style={[styles.speakerShare, { color: speakerColor }]}>
+                          {Math.round(s.share * 100)}% SHARE
+                        </Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-              );
-            })}
-          </View>
+                );
+              })}
+            </View>
+          </ScrollView>
         )}
 
         {tab === 'Sounds' && (
-          <View style={styles.tabContent}>
-            {ALL_CATEGORIES.map((cat) => {
-              const events = categorizedSounds.byCategory[cat];
-              if (!events || events.length === 0) return null;
-              return (
-                <View key={cat} style={styles.soundCategory}>
-                  <View style={styles.soundCategoryHeader}>
-                    <Text style={{ fontSize: 16, color: categoryIconColors[cat] }}>{categoryIcons[cat] ?? '🔉'}</Text>
-                    <Text style={styles.cardTitle}>{cat}</Text>
-                  </View>
-                  {events.map((event, i) => {
-                    const intensity = Math.round(event.score * 100);
-                    const intensityLabel = intensity > 60 ? 'High' : intensity > 30 ? 'Medium' : 'Low';
-                    const intensityColor = intensity > 60 ? colors.error : intensity > 30 ? '#F59E0B' : colors.tertiary;
-                    return (
-                      <View key={`${cat}-${i}`} style={styles.soundCard}>
-                        <View style={styles.soundCardHeader}>
-                          <View style={styles.soundCardLeft}>
-                            <View style={[styles.soundIconWrap, { backgroundColor: `${categoryIconColors[cat]}10` }]}>
-                              <Text style={{ fontSize: 16, color: categoryIconColors[cat] }}>{categoryIcons[cat]}</Text>
+          <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+            <View style={styles.tabContent}>
+              {ALL_CATEGORIES.map((cat) => {
+                const events = categorizedSounds.byCategory[cat];
+                if (!events || events.length === 0) return null;
+                return (
+                  <View key={cat} style={styles.soundCategory}>
+                    <View style={styles.soundCategoryHeader}>
+                      <Text style={{ fontSize: 16, color: categoryIconColors[cat] }}>
+                        {categoryIcons[cat] ?? '🔉'}
+                      </Text>
+                      <Text style={styles.cardTitle}>{cat}</Text>
+                    </View>
+                    {events.map((event, i) => {
+                      const intensity = Math.round(event.score * 100);
+                      const intensityLabel =
+                        intensity > 60 ? 'High' : intensity > 30 ? 'Medium' : 'Low';
+                      const intensityColor =
+                        intensity > 60
+                          ? colors.error
+                          : intensity > 30
+                          ? '#F59E0B'
+                          : colors.tertiary;
+                      return (
+                        <View key={`${cat}-${i}`} style={styles.soundCard}>
+                          <View style={styles.soundCardHeader}>
+                            <View style={styles.soundCardLeft}>
+                              <View
+                                style={[
+                                  styles.soundIconWrap,
+                                  { backgroundColor: `${categoryIconColors[cat]}10` },
+                                ]}
+                              >
+                                <Text style={{ fontSize: 16, color: categoryIconColors[cat] }}>
+                                  {categoryIcons[cat]}
+                                </Text>
+                              </View>
+                              <View>
+                                <Text style={styles.soundName}>{event.label}</Text>
+                                <Text style={styles.soundMeta}>
+                                  {event.startSec.toFixed(1)}s - {event.endSec.toFixed(1)}s
+                                </Text>
+                              </View>
                             </View>
-                            <View>
-                              <Text style={styles.soundName}>{event.label}</Text>
-                              <Text style={styles.soundMeta}>
-                                {event.startSec.toFixed(1)}s - {event.endSec.toFixed(1)}s
+                          </View>
+                          <View style={styles.intensitySection}>
+                            <View style={styles.intensityLabelRow}>
+                              <Text style={styles.intensityLabelText}>INTENSITY</Text>
+                              <Text style={[styles.intensityValueText, { color: intensityColor }]}>
+                                {intensityLabel} ({intensity}%)
                               </Text>
                             </View>
+                            <View style={styles.intensityTrack}>
+                              <View
+                                style={[
+                                  styles.intensityFill,
+                                  { width: `${intensity}%`, backgroundColor: intensityColor },
+                                ]}
+                              />
+                            </View>
                           </View>
                         </View>
-                        <View style={styles.intensitySection}>
-                          <View style={styles.intensityLabelRow}>
-                            <Text style={styles.intensityLabelText}>INTENSITY</Text>
-                            <Text style={[styles.intensityValueText, { color: intensityColor }]}>
-                              {intensityLabel} ({intensity}%)
-                            </Text>
-                          </View>
-                          <View style={styles.intensityTrack}>
-                            <View style={[styles.intensityFill, { width: `${intensity}%`, backgroundColor: intensityColor }]} />
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              );
-            })}
-          </View>
+                      );
+                    })}
+                  </View>
+                );
+              })}
+            </View>
+          </ScrollView>
         )}
-      </ScrollView>
+      </View>
 
-      {/* ── Bottom Nav ─────────────────────────────────────── */}
+      {/* Bottom Nav */}
       <BottomNavBar activeTab="home" onNavigate={handleNavigation} />
     </View>
   );
 };
 
-// ── Styles ────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  scroll: { paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: 110 },
+  mainContent: { flex: 1, paddingHorizontal: spacing.md, paddingTop: spacing.md },
+  scroll: { paddingBottom: 110 },
+  transcriptTabWrapper: { flex: 1 },
+  flatListPadding: { paddingBottom: 110, gap: spacing.xs },
 
   // Stats Row
-  statsRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },
+  statsRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
   statCard: { flex: 1, padding: spacing.md, alignItems: 'center', justifyContent: 'center', gap: 4 },
   statValue: { ...typography.headlineMd, color: colors.onSurface },
   statLabel: { ...typography.labelMd, color: colors.onSurfaceVariant },
@@ -391,7 +497,35 @@ const styles = StyleSheet.create({
   // Tab Content
   tabContent: { gap: spacing.md },
 
-  // Card (shared)
+  // Skeleton
+  skeletonContainer: { gap: spacing.md, paddingVertical: spacing.sm },
+  skeletonBubble: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    width: '85%',
+    opacity: 0.6,
+  },
+  skeletonAlignLeft: { alignSelf: 'flex-start' },
+  skeletonAlignRight: { alignSelf: 'flex-end' },
+  skeletonBadge: { width: 70, height: 16, borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.1)', marginBottom: 12 },
+  skeletonTextLineLong: { width: '90%', height: 12, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.08)', marginBottom: 8 },
+  skeletonTextLineShort: { width: '50%', height: 12, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.08)' },
+
+  // Empty State
+  emptyCard: {
+    padding: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: spacing.xl,
+  },
+  emptyIcon: { fontSize: 40, marginBottom: spacing.sm },
+  emptyTitle: { ...typography.headlineMd, color: colors.onSurface, marginBottom: spacing.xs },
+  emptySubtext: { ...typography.bodySm, color: colors.onSurfaceVariant, textAlign: 'center' },
+
+  // Shared Card
   card: {
     backgroundColor: colors.card,
     borderWidth: 1,
@@ -402,15 +536,7 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
   cardTitle: { ...typography.headlineMd, color: colors.onSurface },
 
-  // Transcript
-  transcriptBubble: { padding: spacing.md },
-  bubbleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  speakerChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
-  speakerChipText: { ...typography.labelMd },
-  bubbleTime: { ...typography.labelMd, color: 'rgba(199, 196, 215, 0.6)', fontFamily: 'monospace' },
-  bubbleText: { ...typography.bodyMd, color: colors.onSurface, lineHeight: 22 },
-
-  // Speakers — Timeline
+  // Speakers Timeline
   timeRange: { fontSize: 10, color: colors.onSurfaceVariant, fontFamily: 'monospace' },
   timelineBar: {
     flexDirection: 'row',

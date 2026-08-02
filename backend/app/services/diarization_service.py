@@ -17,6 +17,7 @@ from app.services.speaker_profiles_service import match_speakers
 
 _pipeline = None
 _local_asr_pipeline = None
+_faster_whisper_model = None
 
 # Keep CPU memory/threads predictable on developer machines.
 try:
@@ -27,13 +28,14 @@ except Exception:
 
 
 def _maybe_release_models() -> None:
-    global _pipeline, _local_asr_pipeline
+    global _pipeline, _local_asr_pipeline, _faster_whisper_model
 
     if not settings.release_models_after_request:
         return
 
     _pipeline = None
     _local_asr_pipeline = None
+    _faster_whisper_model = None
 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -577,6 +579,148 @@ def _transcribe_with_local_whisper(audio_path: str, duration_seconds: float) -> 
     ]
 
 
+def _get_faster_whisper_model():
+    global _faster_whisper_model
+    if _faster_whisper_model is None:
+        try:
+            from faster_whisper import WhisperModel
+            _faster_whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+        except Exception as exc:
+            print(f"[faster-whisper Init ERROR] {exc}")
+            _faster_whisper_model = None
+    return _faster_whisper_model
+
+
+def _resolve_overlapping_speech(segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Handle edge case: Overlapping speech (two speakers detected in the same window).
+    Assign to whichever speaker has the larger overlap in that segment.
+    """
+    if not segments:
+        return []
+
+    sorted_segs = sorted(segments, key=lambda x: (x["start"], x["end"]))
+    resolved: List[Dict[str, Any]] = []
+
+    for seg in sorted_segs:
+        start = float(seg["start"])
+        end = float(seg["end"])
+        speaker = seg["speaker"]
+
+        if start >= end:
+            continue
+
+        if not resolved:
+            resolved.append(dict(seg))
+            continue
+
+        prev = resolved[-1]
+        prev_start = float(prev["start"])
+        prev_end = float(prev["end"])
+        prev_speaker = prev["speaker"]
+
+        overlap_start = max(start, prev_start)
+        overlap_end = min(end, prev_end)
+        overlap_len = max(0.0, overlap_end - overlap_start)
+
+        if overlap_len > 0 and prev_speaker != speaker:
+            prev_dur = prev_end - prev_start
+            curr_dur = end - start
+
+            if curr_dur > prev_dur:
+                prev["end"] = round(overlap_start, 2)
+            else:
+                start = round(overlap_end, 2)
+                if start >= end:
+                    continue
+                seg = {**seg, "start": start}
+
+        resolved.append(dict(seg))
+
+    return [s for s in resolved if float(s["end"]) > float(s["start"])]
+
+
+def _transcribe_speaker_segments_faster_whisper(
+    audio_path: str,
+    segments: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    Slices audio region for each speaker segment identified by Pyannote/VAD and runs
+    faster-whisper (CTranslate2) transcription on that slice.
+    """
+    model = _get_faster_whisper_model()
+    if not model or not segments:
+        return []
+
+    resolved_segments = _resolve_overlapping_speech(segments)
+
+    try:
+        waveform, sr = torchaudio.load(audio_path)
+        if waveform.size(0) > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+    except Exception as exc:
+        print(f"[faster-whisper torchaudio load error]: {exc}")
+        return []
+
+    total_samples = waveform.size(1)
+    utterances: List[Dict[str, Any]] = []
+
+    for seg in resolved_segments:
+        start_sec = max(0.0, float(seg["start"]))
+        end_sec = float(seg["end"])
+        duration = end_sec - start_sec
+
+        if duration <= 0.0:
+            continue
+
+        start_frame = int(start_sec * sr)
+        num_frames = max(1, int(duration * sr))
+        if start_frame >= total_samples:
+            continue
+        end_frame = min(total_samples, start_frame + num_frames)
+
+        slice_waveform = waveform[:, start_frame:end_frame]
+        if slice_waveform.numel() == 0:
+            continue
+
+        with tempfile.NamedTemporaryFile(suffix="_slice.wav", delete=False) as tmp_slice:
+            slice_path = tmp_slice.name
+
+        try:
+            torchaudio.save(slice_path, slice_waveform, sr)
+            whisper_segments, _ = model.transcribe(
+                slice_path,
+                beam_size=3,
+                word_timestamps=False,
+                vad_filter=False,  # Retain short speech slices (<0.5s)
+            )
+            text_chunks = [s.text.strip() for s in whisper_segments if s.text and s.text.strip()]
+            text = " ".join(text_chunks).strip()
+
+            # Handle edge case: silence-only gaps between utterances — omit empty entries
+            if not text:
+                continue
+
+            utterances.append({
+                "speaker": seg["speaker"],
+                "text": text,
+                "start": round(start_sec, 2),
+                "end": round(end_sec, 2),
+            })
+        except Exception as exc:
+            print(f"[Slice Transcription Error {start_sec}-{end_sec}s]: {exc}")
+        finally:
+            if os.path.exists(slice_path):
+                try:
+                    os.remove(slice_path)
+                except OSError:
+                    pass
+
+    # Sort final utterances array by `start` ascending
+    utterances.sort(key=lambda u: (u["start"], u["end"]))
+    return utterances
+
+
 def _segment_overlap(start_a: float, end_a: float, start_b: float, end_b: float) -> float:
     start = max(start_a, start_b)
     end = min(end_a, end_b)
@@ -1082,6 +1226,7 @@ def diarize_file(input_path: str) -> Dict:
     assemblyai_transcript_only_payload: Dict[str, Any] = {}
     assemblyai_normalized: Optional[Dict[str, Any]] = None
     diarized_segments: List[Dict[str, Any]] = []
+    faster_whisper_utterances: List[Dict[str, Any]] = []
     speaker_match_map: Dict[str, Dict[str, Any]] = {}
     sound_events: List[Dict[str, Any]] = []
     allow_whisper_fallback = _allow_whisper_fallback()
@@ -1191,6 +1336,15 @@ def diarize_file(input_path: str) -> Dict:
             diarized_segments = _collapse_short_speaker_fragments(diarized_segments)
 
             try:
+                faster_whisper_utterances = _transcribe_speaker_segments_faster_whisper(
+                    m2_audio_path,
+                    diarized_segments,
+                )
+            except Exception as fw_exc:
+                print(f"[faster-whisper segment transcription error]: {fw_exc}")
+                faster_whisper_utterances = []
+
+            try:
                 speaker_match_map = match_speakers(
                     diarized_segments,
                     m2_audio_path,
@@ -1258,24 +1412,30 @@ def diarize_file(input_path: str) -> Dict:
             seg["speaker_confidence"] = float(match["confidence"])
 
         speaker_labels = sorted(list(set(seg["speaker"] for seg in diarized_segments)))
-        utterances = _attach_whisper_text_to_segments(diarized_segments, transcript_segments)
-        if not utterances and whisper_text:
-            utterances = _distribute_text_across_segments(diarized_segments, whisper_text)
+        if faster_whisper_utterances:
+            utterances = faster_whisper_utterances
+        else:
+            utterances = _attach_whisper_text_to_segments(diarized_segments, transcript_segments)
+            if not utterances and whisper_text:
+                utterances = _distribute_text_across_segments(diarized_segments, whisper_text)
 
-        if _should_redistribute_text(utterances, speaker_labels, transcript_segments):
-            combined_text = " ".join(
-                str(item.get("text", "")).strip()
-                for item in transcript_segments
-                if str(item.get("text", "")).strip()
-            ).strip()
-            if combined_text:
-                long_segments = [
-                    seg for seg in diarized_segments if (float(seg["end"]) - float(seg["start"])) >= 0.35
-                ]
-                target_segments = long_segments or diarized_segments
-                redistributed = _distribute_text_across_segments(target_segments, combined_text)
-                if redistributed:
-                    utterances = redistributed
+            if _should_redistribute_text(utterances, speaker_labels, transcript_segments):
+                combined_text = " ".join(
+                    str(item.get("text", "")).strip()
+                    for item in transcript_segments
+                    if str(item.get("text", "")).strip()
+                ).strip()
+                if combined_text:
+                    long_segments = [
+                        seg for seg in diarized_segments if (float(seg["end"]) - float(seg["start"])) >= 0.35
+                    ]
+                    target_segments = long_segments or diarized_segments
+                    redistributed = _distribute_text_across_segments(target_segments, combined_text)
+                    if redistributed:
+                        utterances = redistributed
+
+        # Ensure utterances are sorted chronologically by start time ascending
+        utterances.sort(key=lambda u: (float(u["start"]), float(u["end"])))
 
         for utterance in utterances:
             match = speaker_match_map.get(utterance["speaker"], {
@@ -1297,7 +1457,9 @@ def diarize_file(input_path: str) -> Dict:
         ]
 
         transcript_mode = "pyannote_only_m1_m2"
-        if transcript_segments is whisper_segments and whisper_segments:
+        if faster_whisper_utterances:
+            transcript_mode = "pyannote_plus_faster_whisper_m2"
+        elif transcript_segments is whisper_segments and whisper_segments:
             transcript_mode = "pyannote_plus_whisper_m1_m2"
         elif transcript_segments is local_whisper_segments and local_whisper_segments:
             transcript_mode = "pyannote_plus_local_whisper_m1_m2"
