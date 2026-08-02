@@ -174,7 +174,7 @@ def _segment_embedding(
 def match_speakers(
     diarized_segments: List[Dict[str, Any]],
     audio_path: str,
-    confidence_threshold: float = 0.85,
+    confidence_threshold: float = 0.75,
 ) -> Dict[str, Dict[str, Any]]:
     profiles = _load_profiles()
     if not profiles:

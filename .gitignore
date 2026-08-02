@@ -40,6 +40,13 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Web (Next.js)
+web/node_modules/
+web/.next/
+web/.env
+web/.env.local
+web/out/
+
 # General caches/temp
 .cache/
 tmp/

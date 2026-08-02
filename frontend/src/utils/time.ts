@@ -8,3 +8,5 @@ export const formatSeconds = (seconds: number): string => {
 
   return `${mins}:${secs}`;
 };
+
+export const formatTimestamp = formatSeconds;

@@ -1,12 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import diarization, speaker_profiles
+from app.routers import diarization, live_transcription_router, speaker_profiles
 from app.settings import ENV_FILE_PATH, settings
 
 app = FastAPI(
     title="Real-Time Audio Intelligence API",
-    description="Speaker diarization, transcription, and sound classification (M1–M7)",
+    description="Speaker diarization, transcription, and sound classification (M1–M8)",
     version="0.1.0",
 )
 
@@ -21,6 +21,7 @@ app.add_middleware(
 
 app.include_router(diarization.router, prefix="/api", tags=["diarization"])
 app.include_router(speaker_profiles.router, prefix="/api", tags=["speaker-profiles"])
+app.include_router(live_transcription_router.router, prefix="/api", tags=["live-transcription"])
 
 
 @app.on_event("startup")

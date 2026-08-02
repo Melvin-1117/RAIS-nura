@@ -213,8 +213,8 @@ export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: Proces
                 key={m.key}
                 style={[
                   styles.pipelineStep,
-                  isPending && { opacity: 0.5 },
-                  isActive && { borderColor: 'rgba(192, 193, 255, 0.4)' },
+                  isPending ? { opacity: 0.5 } : {},
+                  isActive ? { borderColor: 'rgba(192, 193, 255, 0.4)' } : {},
                 ]}
               >
                 <View style={styles.pipelineRow}>

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     assemblyai_poll_attempts: int = 90
     assemblyai_poll_interval_seconds: float = 2.0
     assemblyai_speech_models: str = "universal-3-pro"
-    prefer_assemblyai_transcription: bool = True
+    prefer_assemblyai_transcription: bool = False
     whisper_api_key: str = ""
     whisper_api_base_url: str = "https://api.openai.com/v1"
     whisper_model: str = "whisper-1"
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     torch_num_threads: int = 2
     release_models_after_request: bool = True
     enable_pyannote_diarization: bool = False
-    enable_local_asr_fallback: bool = False
+    enable_local_asr_fallback: bool = True
 
     model_config = SettingsConfigDict(env_file=ENV_FILE_PATH, env_file_encoding="utf-8")
 

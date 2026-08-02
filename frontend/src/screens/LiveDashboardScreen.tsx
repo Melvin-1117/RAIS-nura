@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { GlassPanel } from '../components/GlassPanel';
 import { TopAppBar } from '../components/TopAppBar';
 import { WaveformPlaceholder } from '../components/WaveformPlaceholder';
 import { colors, radius, spacing, typography } from '../constants/theme';
+import { useTranscription } from '../hooks/useTranscription';
 
 type LiveDashboardScreenProps = { onBack: () => void };
 
@@ -16,54 +16,58 @@ const speakerColors: Record<string, string> = {
   'Speaker C': colors.tertiary,
 };
 
-const initialTranscript: LiveEntry[] = [
-  { speaker: 'Speaker A', text: 'Checking audio levels from the primary microphone array...', at: '12:44:02', color: colors.primary },
-  { speaker: 'Speaker B', text: 'Levels look good. Signal-to-noise ratio is optimal for this environment.', at: '12:44:15', color: colors.secondary },
-];
-
-const delayedMessages: LiveEntry[] = [
-  { speaker: 'Speaker A', text: 'Analyzing ambient background hum...', at: '', color: colors.primary },
-  { speaker: 'Speaker C', text: 'Filter applied at 50Hz and 60Hz. Signal clarified.', at: '', color: colors.tertiary },
-  { speaker: 'Speaker B', text: 'Understood. Proceeding with full spectrum analysis.', at: '', color: colors.secondary },
-];
-
-const backgroundSounds = [
-  { icon: '💨', label: 'HVAC System', distance: '12m' },
-  { icon: '🚗', label: 'City Traffic', distance: '45m' },
-  { icon: '⌨️', label: 'Mechanical Typing', distance: '2m' },
+const defaultBackgroundSounds = [
+  { icon: '🗣️', label: 'Human Speech', distance: 'Near (< 1m)' },
+  { icon: '💨', label: 'HVAC Ambient', distance: 'Mid (2m)' },
+  { icon: '⌨️', label: 'Mechanical Typing', distance: 'Near (1m)' },
 ];
 
 export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
-  const [entries, setEntries] = useState<LiveEntry[]>(initialTranscript);
-  const [seconds, setSeconds] = useState(765); // 12m 45s
+  const { transcript, startLive, stopLive, error } = useTranscription();
+  const [seconds, setSeconds] = useState(0);
   const pulseLive = useRef(new Animated.Value(1)).current;
+  const scrollViewRef = useRef<ScrollView>(null);
 
+  // Pulse animation for LIVE badge
   useEffect(() => {
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(pulseLive, { toValue: 0.3, duration: 700, useNativeDriver: Platform.OS !== 'web' }),
-      Animated.timing(pulseLive, { toValue: 1, duration: 700, useNativeDriver: Platform.OS !== 'web' }),
-    ]));
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseLive, { toValue: 0.3, duration: 700, useNativeDriver: Platform.OS !== 'web' }),
+        Animated.timing(pulseLive, { toValue: 1, duration: 700, useNativeDriver: Platform.OS !== 'web' }),
+      ])
+    );
     loop.start();
     return () => loop.stop();
   }, [pulseLive]);
 
-  // Timer
+  // Session Duration Timer
   useEffect(() => {
-    const interval = setInterval(() => setSeconds(s => s + 1), 1000);
+    const interval = setInterval(() => setSeconds((s) => s + 1), 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Simulated transcript injection
+  // Start real-time local transcription session on mount
   useEffect(() => {
-    const timers = delayedMessages.map((msg, i) =>
-      setTimeout(() => {
-        const now = new Date();
-        const time = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-        setEntries(prev => [...prev, { ...msg, at: time }]);
-      }, 3000 + i * 4000)
-    );
-    return () => timers.forEach(clearTimeout);
-  }, []);
+    let mounted = true;
+
+    startLive().catch((err) => {
+      if (mounted) {
+        console.warn('Failed to auto-start live transcription:', err?.message);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      stopLive();
+    };
+  }, [startLive, stopLive]);
+
+  // Auto scroll transcript feed to latest entry
+  useEffect(() => {
+    if (transcript.length > 0) {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [transcript]);
 
   const formatTime = (s: number) => {
     const hrs = Math.floor(s / 3600).toString().padStart(2, '0');
@@ -72,36 +76,67 @@ export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
     return `${hrs}:${mins}:${secs}`;
   };
 
+  const formattedEntries: LiveEntry[] = transcript.map((item) => {
+    const date = new Date(item.startTime * 1000);
+    const timeStr = `${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
+    const speakerKey = item.speaker ? `Speaker ${item.speaker}` : 'Speaker A';
+    const color = speakerColors[speakerKey] || colors.primary;
+
+    return {
+      speaker: speakerKey,
+      text: item.text,
+      at: timeStr,
+      color,
+    };
+  });
+
+  const handleStop = () => {
+    stopLive();
+    onBack();
+  };
+
+  const uniqueSpeakersCount = new Set(transcript.map((t) => t.speaker)).size || 1;
+
   return (
     <View style={styles.container}>
       {/* ── Header ─────────────────────────────────────────── */}
       <TopAppBar
         variant="back"
-        title="Live Session"
-        onBack={onBack}
+        title="Live Local Intelligence"
+        onBack={handleStop}
         rightElement={
-          <Pressable onPress={onBack} style={styles.stopBtn}>
+          <Pressable onPress={handleStop} style={styles.stopBtn}>
             <Text style={styles.stopBtnText}>STOP</Text>
           </Pressable>
         }
       />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        {error && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>⚠️ {error}</Text>
+          </View>
+        )}
+
         {/* ── Stats Row ────────────────────────────────────── */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Speakers</Text>
-            <Text style={[styles.statValue, { color: colors.primary }]}>03</Text>
+            <Text style={[styles.statValue, { color: colors.primary }]}>
+              {String(uniqueSpeakersCount).padStart(2, '0')}
+            </Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Entries</Text>
-            <Text style={[styles.statValue, { color: colors.secondary }]}>{entries.length}</Text>
+            <Text style={[styles.statValue, { color: colors.secondary }]}>
+              {String(transcript.length).padStart(2, '0')}
+            </Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Status</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Animated.View style={[styles.liveStatusDot, { opacity: pulseLive }]} />
-              <Text style={[styles.statValue, { color: colors.tertiary }]}>Live</Text>
+              <Text style={[styles.statValue, { color: colors.tertiary }]}>Local Live</Text>
             </View>
           </View>
         </View>
@@ -109,7 +144,7 @@ export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
         {/* ── Audio Monitor ────────────────────────────────── */}
         <View style={styles.glassCard}>
           <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Audio Monitor</Text>
+            <Text style={styles.cardTitle}>Local Audio Stream</Text>
             <Text style={{ color: colors.primary, fontSize: 20 }}>📊</Text>
           </View>
           <View style={styles.waveformContainer}>
@@ -120,8 +155,8 @@ export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
           </View>
           <View style={styles.monitorFooter}>
             <View>
-              <Text style={styles.monitorLabel}>Session ID</Text>
-              <Text style={styles.monitorValue}>NR-992-LX</Text>
+              <Text style={styles.monitorLabel}>Engine</Text>
+              <Text style={styles.monitorValue}>Faster-Whisper (Local)</Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={styles.monitorLabel}>Duration</Text>
@@ -137,10 +172,10 @@ export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
           </View>
           <View style={styles.intensityGroup}>
             {[
-              { label: 'Speech Presence', value: 88, color: colors.secondary },
-              { label: 'Ambient Noise', value: 14, color: colors.primary },
-              { label: 'Electronic Hum', value: 2, color: colors.tertiary },
-            ].map(item => (
+              { label: 'Speech Presence', value: transcript.length > 0 ? 88 : 35, color: colors.secondary },
+              { label: 'Ambient Level', value: 20, color: colors.primary },
+              { label: 'Signal-to-Noise', value: 92, color: colors.tertiary },
+            ].map((item) => (
               <View key={item.label} style={styles.intensityRow}>
                 <View style={styles.intensityHeader}>
                   <Text style={styles.intensityLabel}>{item.label}</Text>
@@ -155,32 +190,41 @@ export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
         </View>
 
         {/* ── Transcript ───────────────────────────────────── */}
-        <View style={[styles.glassCard, { maxHeight: 300 }]}>
+        <View style={[styles.glassCard, { maxHeight: 320 }]}>
           <View style={styles.transcriptHeader}>
-            <Text style={styles.cardTitle}>Transcript</Text>
+            <Text style={styles.cardTitle}>Live Transcript</Text>
             <View style={styles.autoScrollBadge}>
-              <Text style={styles.autoScrollText}>AUTO-SCROLL</Text>
+              <Text style={styles.autoScrollText}>REAL-TIME ASR</Text>
             </View>
           </View>
-          <ScrollView style={styles.transcriptFeed} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-            {entries.map((entry, i) => (
-              <View key={i} style={styles.transcriptEntry}>
-                <View style={styles.transcriptMeta}>
-                  <View style={[styles.speakerBadge, { backgroundColor: `${entry.color}22` }]}>
-                    <Text style={[styles.speakerBadgeText, { color: entry.color }]}>{entry.speaker}</Text>
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.transcriptFeed}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={false}
+          >
+            {formattedEntries.length === 0 ? (
+              <Text style={styles.emptyText}>Listening for speech in real-time...</Text>
+            ) : (
+              formattedEntries.map((entry, i) => (
+                <View key={i} style={styles.transcriptEntry}>
+                  <View style={styles.transcriptMeta}>
+                    <View style={[styles.speakerBadge, { backgroundColor: `${entry.color}22` }]}>
+                      <Text style={[styles.speakerBadgeText, { color: entry.color }]}>{entry.speaker}</Text>
+                    </View>
+                    <Text style={styles.transcriptTime}>{entry.at}</Text>
                   </View>
-                  <Text style={styles.transcriptTime}>{entry.at}</Text>
+                  <Text style={styles.transcriptText}>{entry.text}</Text>
                 </View>
-                <Text style={styles.transcriptText}>{entry.text}</Text>
-              </View>
-            ))}
+              ))
+            )}
           </ScrollView>
         </View>
 
         {/* ── Background Sounds ────────────────────────────── */}
         <View style={styles.glassCard}>
-          <Text style={[styles.cardTitle, { marginBottom: 12 }]}>Background Sounds</Text>
-          {backgroundSounds.map((sound) => (
+          <Text style={[styles.cardTitle, { marginBottom: 12 }]}>Background Sound Classification</Text>
+          {defaultBackgroundSounds.map((sound) => (
             <View key={sound.label} style={styles.soundRow}>
               <View style={styles.soundLeft}>
                 <Text style={{ fontSize: 16, color: colors.primary }}>{sound.icon}</Text>
@@ -201,7 +245,15 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: spacing.md, paddingBottom: 40, gap: spacing.md },
 
-  // Stop button
+  errorBox: {
+    backgroundColor: 'rgba(255, 80, 80, 0.15)',
+    borderColor: colors.error,
+    borderWidth: 1,
+    padding: spacing.md,
+    borderRadius: radius.md,
+  },
+  errorText: { ...typography.bodySm, color: colors.error },
+
   stopBtn: {
     paddingHorizontal: 16,
     paddingVertical: 6,
@@ -211,7 +263,6 @@ const styles = StyleSheet.create({
   },
   stopBtnText: { ...typography.labelMd, color: colors.error, textTransform: 'uppercase' },
 
-  // Stats
   statsRow: { flexDirection: 'row', gap: spacing.sm },
   statCard: {
     flex: 1,
@@ -227,7 +278,6 @@ const styles = StyleSheet.create({
   statValue: { ...typography.headlineLg },
   liveStatusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.tertiary },
 
-  // Glass Card
   glassCard: {
     backgroundColor: colors.card,
     borderWidth: 1,
@@ -239,16 +289,13 @@ const styles = StyleSheet.create({
   cardTitle: { ...typography.headlineMd, color: colors.onSurface },
   cardTitleBordered: { borderLeftWidth: 4, paddingLeft: spacing.md, marginBottom: spacing.lg },
 
-  // Waveform
   waveformContainer: { height: 120, justifyContent: 'center' },
 
-  // Monitor Footer
   monitorFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: spacing.lg },
   monitorLabel: { ...typography.labelMd, color: colors.onSurfaceVariant },
   monitorValue: { ...typography.bodyMd, fontFamily: 'monospace' },
   monitorDuration: { ...typography.headlineMd },
 
-  // Intensity
   intensityGroup: { gap: spacing.md },
   intensityRow: { gap: 4 },
   intensityHeader: { flexDirection: 'row', justifyContent: 'space-between' },
@@ -257,11 +304,19 @@ const styles = StyleSheet.create({
   intensityTrack: { height: 8, backgroundColor: colors.surfaceContainer, borderRadius: radius.pill, overflow: 'hidden' },
   intensityFill: { height: '100%', borderRadius: radius.pill },
 
-  // Transcript
-  transcriptHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)', paddingBottom: spacing.md },
+  transcriptHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+    paddingBottom: spacing.md,
+  },
   autoScrollBadge: { backgroundColor: 'rgba(192, 193, 255, 0.1)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
   autoScrollText: { ...typography.labelMd, color: colors.primary, fontSize: 10 },
-  transcriptFeed: { maxHeight: 200 },
+  transcriptFeed: { maxHeight: 220 },
+  emptyText: { ...typography.bodyMd, color: colors.onSurfaceVariant, fontStyle: 'italic', paddingVertical: spacing.md },
   transcriptEntry: { marginBottom: spacing.md },
   transcriptMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 4 },
   speakerBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
@@ -269,7 +324,6 @@ const styles = StyleSheet.create({
   transcriptTime: { fontSize: 10, color: colors.onSurfaceVariant },
   transcriptText: { ...typography.bodyMd, color: colors.onSurface },
 
-  // Background Sounds
   soundRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
