@@ -74,12 +74,15 @@ async def diarize_audio(file: UploadFile = File(...)) -> DiarizationResponse:
             start=entry["start"],
             end=entry["end"],
             speaker=entry["speaker"],
+            speaker_name=entry.get("speaker_name", entry.get("speaker_display", "Unknown Speaker")),
+            confidence=entry.get("confidence"),
             speaker_display=entry.get("speaker_display", entry["speaker"]),
-            speaker_confidence=float(entry.get("speaker_confidence", 0.0)),
+            speaker_confidence=float(entry.get("speaker_confidence", 0.0) or 0.0),
             text=entry["text"],
         )
         for entry in result["utterances"]
     ]
+
     response_sounds = [
         SoundEventOut(
             start=entry["start"],

@@ -41,8 +41,11 @@ async def create_speaker_profile(
 
         try:
             created = register_profile(name=name, audio_path=src_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Profile registration failed: {exc}") from exc
+
 
     return SpeakerProfileOut(**created)
 

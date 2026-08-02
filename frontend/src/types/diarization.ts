@@ -10,10 +10,13 @@ export type Utterance = {
   start: number;
   end: number;
   speaker: string;
+  speaker_name?: string;
+  confidence?: number | null;
   speaker_display?: string;
   speaker_confidence?: number;
   text: string;
 };
+
 
 export type SpeakerMatch = {
   speaker: string;

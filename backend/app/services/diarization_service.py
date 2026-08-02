@@ -1439,12 +1439,16 @@ def diarize_file(input_path: str) -> Dict:
 
         for utterance in utterances:
             match = speaker_match_map.get(utterance["speaker"], {
+                "speaker_name": "Unknown Speaker",
                 "display_name": "Unknown",
-                "confidence": 0.0,
+                "confidence": None,
                 "matched": False,
             })
-            utterance["speaker_display"] = match["display_name"]
-            utterance["speaker_confidence"] = float(match["confidence"])
+            utterance["speaker_name"] = match.get("speaker_name", "Unknown Speaker")
+            utterance["confidence"] = match.get("confidence")
+            utterance["speaker_display"] = match.get("display_name", "Unknown")
+            utterance["speaker_confidence"] = float(match.get("confidence") or 0.0)
+
 
         speaker_matches = [
             {

@@ -196,7 +196,11 @@ export const ResultsScreen = ({
 
   const renderTranscriptItem = ({ item }: { item: Utterance }) => {
     const idx = speakerIndexMap[item.speaker] ?? 0;
-    const color = getSpeakerColor(item.speaker);
+    const speakerKey =
+      item.speaker_name && item.speaker_name.toLowerCase() !== 'unknown speaker'
+        ? item.speaker_name
+        : item.speaker;
+    const color = getSpeakerColor(speakerKey);
     return (
       <TranscriptBubble
         utterance={item}
@@ -206,6 +210,7 @@ export const ResultsScreen = ({
       />
     );
   };
+
 
   return (
     <View style={styles.container}>

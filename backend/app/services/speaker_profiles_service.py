@@ -69,8 +69,13 @@ def extract_embedding(audio_path: str) -> Tuple[List[float], float]:
     return feature.tolist(), round(duration_seconds, 2)
 
 
-def register_profile(name: str, audio_path: str) -> Dict[str, Any]:
+def register_profile(name: str, audio_path: str, min_duration_seconds: float = 30.0) -> Dict[str, Any]:
     embedding, duration_seconds = extract_embedding(audio_path)
+    if duration_seconds < min_duration_seconds:
+        raise ValueError(
+            f"Voice sample must be at least {int(min_duration_seconds)} seconds long for reliable recognition (provided {duration_seconds}s)."
+        )
+
     profiles = _load_profiles()
 
     record = {
@@ -131,7 +136,7 @@ def _segment_embedding(
         return []
 
     chunks: List[torch.Tensor] = []
-    max_seconds = 15.0
+    max_seconds = 30.0
     consumed = 0.0
 
     for segment in sorted(segments, key=lambda item: float(item["start"])):
@@ -166,7 +171,8 @@ def _segment_embedding(
         return embedding
     finally:
         try:
-            os.remove(temp_path)
+            if temp_path.exists():
+                os.remove(temp_path)
         except OSError:
             pass
 
@@ -174,18 +180,21 @@ def _segment_embedding(
 def match_speakers(
     diarized_segments: List[Dict[str, Any]],
     audio_path: str,
-    confidence_threshold: float = 0.75,
+    confidence_threshold: float = 0.85,
 ) -> Dict[str, Dict[str, Any]]:
     profiles = _load_profiles()
+    all_speakers = sorted(set(seg["speaker"] for seg in diarized_segments))
+
+    # Edge case 5b: No profiles enrolled yet — skip matching entirely, all utterances stay with generic labels
     if not profiles:
-        speakers = sorted(set(seg["speaker"] for seg in diarized_segments))
         return {
             speaker: {
+                "speaker_name": "Unknown Speaker",
                 "display_name": "Unknown",
-                "confidence": 0.0,
+                "confidence": None,
                 "matched": False,
             }
-            for speaker in speakers
+            for speaker in all_speakers
         }
 
     profile_vectors = []
@@ -194,6 +203,17 @@ def match_speakers(
         if not emb:
             continue
         profile_vectors.append((profile, torch.tensor(emb, dtype=torch.float32)))
+
+    if not profile_vectors:
+        return {
+            speaker: {
+                "speaker_name": "Unknown Speaker",
+                "display_name": "Unknown",
+                "confidence": None,
+                "matched": False,
+            }
+            for speaker in all_speakers
+        }
 
     waveform, sample_rate = torchaudio.load(audio_path)
     if waveform.size(0) > 1:
@@ -204,44 +224,61 @@ def match_speakers(
         waveform = resampler(waveform)
         sample_rate = settings.target_sample_rate
 
-    result: Dict[str, Dict[str, Any]] = {}
+    # Aggregate MFCC feature vector per diarization speaker ID across all their segments
+    speaker_vectors: Dict[str, torch.Tensor] = {}
+    best_raw_similarities: Dict[str, float] = {}
 
-    for speaker in sorted(set(seg["speaker"] for seg in diarized_segments)):
+    for speaker in all_speakers:
         speaker_segments = [seg for seg in diarized_segments if seg["speaker"] == speaker]
         emb = _segment_embedding(waveform, sample_rate, speaker_segments)
-        if not emb:
-            result[speaker] = {
-                "display_name": "Unknown",
-                "confidence": 0.0,
-                "matched": False,
-            }
-            continue
+        if emb:
+            speaker_vectors[speaker] = torch.tensor(emb, dtype=torch.float32)
 
-        speaker_vec = torch.tensor(emb, dtype=torch.float32)
-        best_name = None
-        best_similarity = -1.0
-
+    # Collect candidate matches (similarity, speaker_id, profile_name)
+    candidate_matches: List[Tuple[float, str, str]] = []
+    for speaker, speaker_vec in speaker_vectors.items():
+        best_sim = -1.0
         for profile, profile_vec in profile_vectors:
             sim = _cosine_similarity(speaker_vec, profile_vec)
-            if sim > best_similarity:
-                best_similarity = sim
-                best_name = profile.get("name")
 
-        # Map cosine similarity from [-1, 1] to [0, 1].
-        confidence = max(0.0, min(1.0, (best_similarity + 1.0) / 2.0))
-        matched = best_name is not None and confidence >= confidence_threshold
+            if sim > best_sim:
+                best_sim = sim
 
-        if matched:
+            if sim >= confidence_threshold:
+                candidate_matches.append((sim, speaker, str(profile.get("name", ""))))
+
+        best_raw_similarities[speaker] = best_sim
+
+    # Sort candidate matches by similarity descending
+    candidate_matches.sort(key=lambda item: item[0], reverse=True)
+
+    assigned_speakers: Dict[str, Tuple[str, float]] = {}
+    assigned_profiles: set = set()
+
+    # Edge case 5a: Greedy 1-to-1 assignment so multiple diarized speakers don't match the same profile
+    for sim, speaker, prof_name in candidate_matches:
+        if speaker not in assigned_speakers and prof_name not in assigned_profiles:
+            assigned_speakers[speaker] = (prof_name, round(sim, 2))
+            assigned_profiles.add(prof_name)
+
+    result: Dict[str, Dict[str, Any]] = {}
+    for speaker in all_speakers:
+        if speaker in assigned_speakers:
+            prof_name, conf = assigned_speakers[speaker]
             result[speaker] = {
-                "display_name": str(best_name),
-                "confidence": round(confidence, 3),
+                "speaker_name": prof_name,
+                "display_name": prof_name,
+                "confidence": conf,
                 "matched": True,
             }
         else:
+            raw_sim = best_raw_similarities.get(speaker, 0.0)
             result[speaker] = {
+                "speaker_name": "Unknown Speaker",
                 "display_name": "Unknown",
-                "confidence": round(confidence, 3),
+                "confidence": round(raw_sim, 2) if raw_sim > 0 else None,
                 "matched": False,
             }
 
     return result
+

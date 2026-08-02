@@ -18,7 +18,11 @@ export interface SpeakerProfile {
   averageEmbedding: number[];
   createdAt: number;
   updatedAt: number;
+  created_at?: string;
+  sample_duration_seconds?: number;
 }
+
+
 
 export interface MatchResult {
   profile: SpeakerProfile | null;

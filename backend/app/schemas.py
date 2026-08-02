@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -12,12 +12,15 @@ class SegmentOut(BaseModel):
 
 
 class UtteranceOut(BaseModel):
-    speaker: str = Field(..., description="Speaker label matching M1 ID (e.g. A or Speaker A)")
+    speaker: str = Field(..., description="Original diarization ID (e.g., 'A', 'Speaker 1')")
+    speaker_name: str = Field("Unknown Speaker", description="Resolved speaker name or 'Unknown Speaker'")
+    confidence: Optional[float] = Field(None, description="Similarity score, or null if unmatched")
     text: str = Field(..., description="Transcribed text for the utterance")
     start: float = Field(..., description="Utterance start time in seconds")
     end: float = Field(..., description="Utterance end time in seconds")
     speaker_display: str = Field("Unknown", description="Resolved speaker display name")
     speaker_confidence: float = Field(0.0, description="Confidence score for speaker recognition")
+
 
 
 class SoundEventOut(BaseModel):
