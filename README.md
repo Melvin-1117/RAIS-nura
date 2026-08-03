@@ -32,9 +32,9 @@ Build a React Native mobile app that processes both recorded and live audio to p
 | Mobile Framework | React Native (Expo managed workflow for speed) |
 | Audio Capture (Live) | expo-av or react-native-audio-recorder-player |
 | Audio File Picker | expo-document-picker |
-| Speech-to-Text (STT) | Whisper API (OpenAI) or AssemblyAI streaming API |
-| Speaker Diarization | AssemblyAI (diarization: true) or pyannote.audio via backend |
-| Speaker Recognition | AssemblyAI speaker profiles or custom embedding server |
+| Speech-to-Text (STT) | Faster-Whisper ASR (Local) |
+| Speaker Diarization | pyannote.audio 3.1 via local backend |
+| Speaker Recognition | Local voice profiles & Pyannote embeddings server |
 | Sound Classification | YAMNet via TensorFlow.js or Google Cloud Audio Intelligence |
 | Background Separation | Demucs (server-side) or Web Audio API spectral gating |
 | Distance Estimation | Energy/reverb heuristics — custom logic on audio features |
@@ -46,7 +46,7 @@ Build a React Native mobile app that processes both recorded and live audio to p
 | Networking | Axios + WebSocket (for live streaming phase) |
 
 > **⚡ Hackathon Strategy**
-> - Use fully-managed cloud APIs (AssemblyAI, OpenAI Whisper) for M1–M3 to save time.
+> - Use fully-managed cloud APIs (Faster-Whisper, Pyannote) for M1–M3 to save time.
 > - Use TensorFlow.js in-app for M4–M7 sound classification to avoid extra backend complexity.
 > - Keep the backend minimal — only spin one up if on-device processing is too slow.
 > - Focus Phase 1 on correctness. Then adapt the same pipeline for Phase 2 real-time.
@@ -71,15 +71,15 @@ As a user, I upload an audio file and the app tells me how many unique speakers 
 **Functional Requirements**
 - Accept audio input: `.mp3`, `.wav`, `.m4a` via file picker
 - Convert audio to 16kHz mono WAV before analysis
-- Submit audio to AssemblyAI with `speaker_labels: true`
-- Parse API response to extract unique speaker IDs
+- Process audio via local Pyannote diarization and Faster-Whisper ASR
+- Parse diarization response to extract unique speaker IDs
 - Display speaker count prominently on the results screen
 - Handle edge cases: silence-only files, single speaker, ambiguous segments
 
 **Implementation Approach**
 - Use `expo-document-picker` to let the user pick a file
-- Upload file to AssemblyAI `/v2/upload` endpoint, then POST to `/v2/transcript` with `speaker_labels: true`
-- Poll `/v2/transcript/{id}` until `status === 'completed'`
+- Submit file to local backend `/api/diarize` endpoint
+- Parse diarization segments and count unique speaker labels
 - Count unique values in `utterances[].speaker`
 
 **Expected Output**
@@ -99,7 +99,7 @@ Produce a full diarized transcript with each segment attributed to the correct s
 As a user, I see a timestamped, color-coded transcript showing exactly who said what and when.
 
 **Functional Requirements**
-- Build on M1 pipeline — use the same AssemblyAI response
+- Build on M1 pipeline — use the same local diarization response
 - Extract `utterances` array: `{ speaker, text, start, end }`
 - Display each utterance as a chat-bubble UI element with speaker label and timestamp
 - Assign consistent colors to each speaker across the transcript
@@ -132,10 +132,7 @@ As a user, I can pre-register known speakers (e.g., "Alice", "Bob"). The app ide
 - If no match exceeds threshold, label as "Unknown Speaker"
 - Display confidence score alongside each speaker label
 
-**Implementation Options**
-- **Option A (recommended):** AssemblyAI speaker profiles API (if available in tier)
-- **Option B:** Run `resemblyzer` or `speechbrain` on a small FastAPI backend, call from app
-- **Option C:** Use OpenAI embeddings on transcribed segments as a fallback proxy
+- **Implementation:** Pyannote voice profile embedding server on local FastAPI backend
 
 ---
 
@@ -236,7 +233,7 @@ As a user, I press "Start Listening" and see a live dashboard updating in real t
 **Functional Requirements**
 - Request microphone permission and begin recording in chunked audio segments
 - Process each 2–3 second audio chunk through the full pipeline
-- Stream transcription using AssemblyAI real-time WebSocket API
+- Stream transcription using Local FastAPI WebSocket server
 - Run sound classification on each chunk via in-app TensorFlow.js model
 - Update all UI panels continuously with < 3 second latency
 - Allow user to start and stop the live session
@@ -273,7 +270,7 @@ As a user, I press "Start Listening" and see a live dashboard updating in real t
 | Time Block | Task |
 |---|---|
 | 00:00 – 01:00 | Project setup: Expo init, folder structure, install dependencies, configure API keys |
-| 01:00 – 02:30 | M1: AssemblyAI integration, file upload, diarization API call, speaker count display |
+| 01:00 – 02:30 | M1: Pyannote & Faster-Whisper local backend integration, speaker count display |
 | 02:30 – 04:00 | M2: Parse utterances, build transcript UI with speaker color coding |
 | 04:00 – 05:30 | M3: Speaker profile CRUD screen, embedding storage, similarity matching |
 | 05:30 – 06:30 | M4: Background separation — integrate Demucs backend or spectral gate |
@@ -283,7 +280,7 @@ As a user, I press "Start Listening" and see a live dashboard updating in real t
 | 10:00 – 11:00 | M7: Intensity computation, VU bar UI |
 | 11:00 – 12:00 | Results screen polish: tabbed layout, finalize M1–M7 flow end-to-end |
 | 12:00 – 13:00 | Break + buffer |
-| 13:00 – 15:00 | M8: Live audio capture, WebSocket streaming to AssemblyAI, live transcript panel |
+| 13:00 – 15:00 | M8: Live audio capture, WebSocket streaming to local backend, live transcript panel |
 | 15:00 – 16:30 | M8: Real-time sound classification on live chunks, update all 5 dashboard panels |
 | 16:30 – 18:00 | M8: Full live dashboard integration, start/stop, latency tuning |
 | 18:00 – 19:30 | Integration testing: end-to-end flows for Phase 1 and Phase 2 |
@@ -296,19 +293,18 @@ As a user, I press "Start Listening" and see a live dashboard updating in real t
 
 ## 6. Key API Reference
 
-### 6.1 AssemblyAI — Diarization
+### 6.1 Local Backend — Diarization & ASR
 
 ```
-POST /v2/transcript
-Body: { audio_url: '...', speaker_labels: true, speakers_expected: null }
-Response: { utterances: [{ speaker, text, start, end }] }
-Polling: GET /v2/transcript/{id} until status === 'completed'
+POST /api/diarize
+Body: FormData { file: audio_file }
+Response: { utterances: [{ speaker, text, start, end }], total_speakers, sounds }
 ```
 
-### 6.2 AssemblyAI — Real-Time WebSocket (M8)
+### 6.2 Local Backend — Real-Time WebSocket (M8)
 
 ```
-wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000
+ws://localhost:8000/api/live/ws
 Send:    PCM audio chunks as binary WebSocket messages
 Receive: { message_type: 'FinalTranscript' | 'PartialTranscript', text, words }
 Auth:    token passed as query param
@@ -329,7 +325,7 @@ Runtime: ~80ms per 1-second chunk on modern device
 
 | Risk | Mitigation |
 |---|---|
-| AssemblyAI rate limits | Cache responses; use a single API key with proper retry logic |
+| Local model memory limits | Cache responses; use a single API key with proper retry logic |
 | Large file upload time | Cap file size at 10MB; show progress indicator |
 | YAMNet accuracy on mobile | Use top-3 predictions; fallback to "Unknown Sound" if confidence < 0.4 |
 | Demucs backend too slow | Pre-run separation server-side; cache result; use spectral gate as fallback |
@@ -361,7 +357,7 @@ Runtime: ~80ms per 1-second chunk on modern device
 /src
   /screens            — HomeScreen, ProcessingScreen, ResultsScreen, LiveScreen, ProfilesScreen
   /components         — TranscriptBubble, SpeakerCard, SoundCard, IntensityBar, DistanceBadge
-  /services           — assemblyai.js, yamnet.js, demucs.js, speakerRecognition.js
+  /services           — liveTranscriptionClient.ts, yamnet.js, demucs.js, speakerRecognition.js
   /hooks              — useAudioUpload, useLiveTranscription, useSoundClassifier
   /store              — useAppStore.js (Zustand)
   /utils              — audioUtils.js, similarityUtils.js, distanceUtils.js

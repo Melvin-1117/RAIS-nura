@@ -7,9 +7,14 @@ import {
   type RecordingOptions,
 } from 'expo-audio';
 import { Platform } from 'react-native';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
-import { AssemblyAILiveClient, transcribeFileWithDiarization } from '../services/assemblyai';
+import {
+  ConnectionState,
+  LivePayload,
+  LocalLiveTranscriptionClient,
+  transcribeFileWithDiarization,
+} from '../services/liveTranscriptionClient';
 import { useTranscriptStore } from '../store/transcriptStore';
 import { TranscriptEntry } from '../types/transcript';
 
@@ -81,7 +86,10 @@ export const useTranscription = () => {
     addOrUpdate,
   } = useTranscriptStore();
 
-  const liveClientRef = useRef<AssemblyAILiveClient | null>(null);
+  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
+  const [latestPayload, setLatestPayload] = useState<LivePayload | null>(null);
+
+  const liveClientRef = useRef<LocalLiveTranscriptionClient | null>(null);
   const chunkLoopRunningRef = useRef(false);
   const recorderRef = useRef<AudioRecorder | null>(null);
 
@@ -141,7 +149,7 @@ export const useTranscription = () => {
 
         // Silence detection: skip near-empty chunks.
         const energy = estimateChunkEnergy(bytes);
-        if (energy < 0.008) {
+        if (energy < 0.005) {
           continue;
         }
 
@@ -170,9 +178,11 @@ export const useTranscription = () => {
         playsInSilentMode: true,
       });
 
-      const client = new AssemblyAILiveClient({
+      const client = new LocalLiveTranscriptionClient({
         onPartial: (entry: TranscriptEntry) => addOrUpdate(entry),
         onFinal: (entry: TranscriptEntry) => addOrUpdate(entry),
+        onPayload: (payload: LivePayload) => setLatestPayload(payload),
+        onStateChange: (state: ConnectionState) => setConnectionState(state),
         onError: (message: string) => setError(message),
         onOpen: () => setLive(true),
         onClose: () => setLive(false),
@@ -198,6 +208,7 @@ export const useTranscription = () => {
     liveClientRef.current?.close();
     liveClientRef.current = null;
     setLive(false);
+    setConnectionState('disconnected');
   }, [setLive]);
 
   return useMemo(
@@ -205,10 +216,12 @@ export const useTranscription = () => {
       transcript,
       isLoading,
       error,
+      connectionState,
+      latestPayload,
       startLive,
       stopLive,
       uploadFile,
     }),
-    [error, isLoading, startLive, stopLive, transcript, uploadFile]
+    [connectionState, error, isLoading, latestPayload, startLive, stopLive, transcript, uploadFile]
   );
 };

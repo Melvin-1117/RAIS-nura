@@ -46,8 +46,6 @@ def _finalize_result(result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _allow_whisper_fallback() -> bool:
-    # When AssemblyAI-first mode is enabled, skip Whisper/local ASR paths to save memory.
-    return not (settings.prefer_assemblyai_transcription and bool(settings.assemblyai_api_key))
 
 
 def _merge_adjacent_speaker_segments(
@@ -579,7 +577,6 @@ def _segment_overlap(start_a: float, end_a: float, start_b: float, end_b: float)
     return max(0.0, end - start)
 
 
-def _is_useful_assemblyai_result(utterances: List[Dict[str, Any]]) -> bool:
     if not utterances:
         return False
 
@@ -842,7 +839,6 @@ def _build_no_diarization_placeholder_result(
     }
 
 
-def _normalize_assemblyai_utterances(utterances: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
     speaker_name_map: Dict[str, str] = {}
     normalized_segments: List[Dict[str, Any]] = []
     normalized_utterances: List[Dict[str, Any]] = []
@@ -897,12 +893,8 @@ def _normalize_assemblyai_utterances(utterances: List[Dict[str, Any]]) -> Dict[s
     }
 
 
-def _transcribe_with_assemblyai_payload(audio_path: str, speaker_labels: bool) -> Dict[str, Any]:
-    if not settings.assemblyai_api_key:
         return {}
 
-    headers = {"authorization": settings.assemblyai_api_key}
-    base_url = settings.assemblyai_base_url.rstrip("/")
 
     with open(audio_path, "rb") as file_stream:
         upload_response = httpx.post(
@@ -914,12 +906,10 @@ def _transcribe_with_assemblyai_payload(audio_path: str, speaker_labels: bool) -
     upload_response.raise_for_status()
     audio_url = upload_response.json().get("upload_url")
     if not audio_url:
-        raise RuntimeError("AssemblyAI upload failed: missing upload_url")
 
     request_body: Dict[str, Any] = {
         "audio_url": audio_url,
         "speaker_labels": speaker_labels,
-        "speech_models": [settings.assemblyai_speech_models or "universal-2"],
     }
 
     transcript_response = httpx.post(
@@ -930,14 +920,11 @@ def _transcribe_with_assemblyai_payload(audio_path: str, speaker_labels: bool) -
     )
     if transcript_response.status_code >= 400:
         raise RuntimeError(
-            "AssemblyAI transcript request failed "
             f"({transcript_response.status_code}): {transcript_response.text[:300]}"
         )
     transcript_id = transcript_response.json().get("id")
     if not transcript_id:
-        raise RuntimeError("AssemblyAI transcript request failed: missing transcript id")
 
-    for _ in range(settings.assemblyai_poll_attempts):
         status_response = httpx.get(
             f"{base_url}/transcript/{transcript_id}",
             headers=headers,
@@ -950,22 +937,15 @@ def _transcribe_with_assemblyai_payload(audio_path: str, speaker_labels: bool) -
         if status == "completed":
             return payload
         if status == "error":
-            error_message = payload.get("error") or "Unknown AssemblyAI transcript failure"
-            raise RuntimeError(f"AssemblyAI transcript failed: {error_message}")
-
-        time.sleep(settings.assemblyai_poll_interval_seconds)
-
-    raise RuntimeError("AssemblyAI transcript polling timed out")
 
 
-def _transcribe_with_assemblyai(audio_path: str) -> List[Dict[str, Any]]:
-    payload = _transcribe_with_assemblyai_payload(audio_path, speaker_labels=True)
+
+
     utterances = payload.get("utterances") or []
     full_text = str(payload.get("text") or "").strip()
     words = payload.get("words") or []
 
     print(
-        f"[AssemblyAI] utterances={len(utterances)} words={len(words)} "
         f"text_chars={len(full_text)}"
     )
 
@@ -994,19 +974,16 @@ def _transcribe_with_assemblyai(audio_path: str) -> List[Dict[str, Any]]:
                 current["text"] += " " + word["text"]
         if current:
             grouped.append(current)
-        print(f"[AssemblyAI] Built {len(grouped)} utterances from words[]")
         return grouped
 
     # Last resort: return single utterance with full transcript text.
     if full_text:
         duration_ms = int(float(payload.get("audio_duration") or 0) * 1000) or 999999
-        print("[AssemblyAI] Using full transcript text as single utterance")
         return [{"speaker": "A", "start": 0, "end": duration_ms, "text": full_text, "confidence": 0.8}]
 
     return []
 
 
-def _build_assemblyai_transcript_only_result(
     payload: Dict[str, Any],
     processed_audio: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -1050,7 +1027,6 @@ def _build_assemblyai_transcript_only_result(
             "duration_seconds": processed_audio["duration_seconds"],
             "source_sample_rate": processed_audio["source_sample_rate"],
             "output_sample_rate": processed_audio["output_sample_rate"],
-            "transcript_mode": "assemblyai_transcript_only_m1_m2",
             "overall_energy_rms": processed_audio["overall_energy_rms"],
             "overall_intensity": processed_audio["overall_intensity"],
         },
@@ -1070,13 +1046,10 @@ def diarize_file(input_path: str) -> Dict:
     }
     whisper_segments: List[Dict[str, Any]] = []
     whisper_error: str = ""
-    assemblyai_error: str = ""
     diarization_error: str = ""
     local_whisper_segments: List[Dict[str, Any]] = []
     local_whisper_error: str = ""
     whisper_text: str = ""
-    assemblyai_transcript_only_payload: Dict[str, Any] = {}
-    assemblyai_normalized: Optional[Dict[str, Any]] = None
     diarized_segments: List[Dict[str, Any]] = []
     speaker_match_map: Dict[str, Dict[str, Any]] = {}
     sound_events: List[Dict[str, Any]] = []
@@ -1096,14 +1069,8 @@ def diarize_file(input_path: str) -> Dict:
                 separation_meta["separation_confirmed"] = False
                 m2_audio_path = processed_path
 
-        if settings.assemblyai_api_key:
             try:
-                assemblyai_utterances = _transcribe_with_assemblyai(m2_audio_path)
-                if not _is_useful_assemblyai_result(assemblyai_utterances):
-                    raise RuntimeError("AssemblyAI returned low-quality or empty utterances")
 
-                normalized = _normalize_assemblyai_utterances(assemblyai_utterances)
-                assemblyai_normalized = normalized
 
                 if not settings.enable_pyannote_diarization:
                     return _finalize_result({
@@ -1125,7 +1092,6 @@ def diarize_file(input_path: str) -> Dict:
                             "duration_seconds": processed_audio["duration_seconds"],
                             "source_sample_rate": processed_audio["source_sample_rate"],
                             "output_sample_rate": processed_audio["output_sample_rate"],
-                            "transcript_mode": "assemblyai_m1_m2",
                             "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
                             "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
                             "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
@@ -1134,15 +1100,11 @@ def diarize_file(input_path: str) -> Dict:
                         },
                     })
             except Exception as exc:
-                assemblyai_error = str(exc)
-                print(f"[AssemblyAI ERROR] {assemblyai_error}")
                 try:
-                    assemblyai_transcript_only_payload = _transcribe_with_assemblyai_payload(
                         m2_audio_path,
                         speaker_labels=False,
                     )
                 except Exception as fallback_exc:
-                    print(f"[AssemblyAI fallback ERROR] {fallback_exc}")
 
         if allow_whisper_fallback and settings.whisper_api_key:
             try:
@@ -1237,10 +1199,6 @@ def diarize_file(input_path: str) -> Dict:
                 "text": whisper_text,
             }
         ]
-    elif assemblyai_normalized:
-        transcript_segments = [dict(item) for item in assemblyai_normalized.get("utterances", [])]
-    elif assemblyai_transcript_only_payload:
-        text = str(assemblyai_transcript_only_payload.get("text") or "").strip()
         if text:
             transcript_segments = [
                 {
@@ -1304,10 +1262,6 @@ def diarize_file(input_path: str) -> Dict:
             transcript_mode = "pyannote_plus_whisper_m1_m2"
         elif transcript_segments is local_whisper_segments and local_whisper_segments:
             transcript_mode = "pyannote_plus_local_whisper_m1_m2"
-        elif assemblyai_normalized and transcript_segments:
-            transcript_mode = "pyannote_plus_assemblyai_utterances_m1_m2"
-        elif assemblyai_transcript_only_payload:
-            transcript_mode = "pyannote_plus_assemblyai_text_m1_m2"
 
         return _finalize_result({
             "total_speakers": len(speaker_labels),
@@ -1329,11 +1283,8 @@ def diarize_file(input_path: str) -> Dict:
             },
         })
 
-    if assemblyai_normalized:
-        speaker_labels = assemblyai_normalized.get("speaker_labels", [])
         return _finalize_result({
             "total_speakers": len(speaker_labels),
-            "segments": assemblyai_normalized.get("segments", []),
             "speaker_labels": speaker_labels,
             "speaker_matches": [
                 {
@@ -1344,13 +1295,11 @@ def diarize_file(input_path: str) -> Dict:
                 }
                 for speaker in speaker_labels
             ],
-            "utterances": assemblyai_normalized.get("utterances", []),
             "sounds": sound_events,
             "processing": {
                 "duration_seconds": processed_audio["duration_seconds"],
                 "source_sample_rate": processed_audio["source_sample_rate"],
                 "output_sample_rate": processed_audio["output_sample_rate"],
-                "transcript_mode": "assemblyai_m1_m2_pyannote_unavailable",
                 "separation_confirmed": bool(separation_meta.get("separation_confirmed", False)),
                 "speech_energy_ratio": float(separation_meta.get("speech_energy_ratio", 0.0)),
                 "background_energy_ratio": float(separation_meta.get("background_energy_ratio", 0.0)),
@@ -1359,9 +1308,6 @@ def diarize_file(input_path: str) -> Dict:
             },
         })
 
-    if assemblyai_transcript_only_payload:
-        result = _build_assemblyai_transcript_only_result(
-            payload=assemblyai_transcript_only_payload,
             processed_audio=processed_audio,
         )
         result["sounds"] = sound_events
@@ -1428,11 +1374,8 @@ def diarize_file(input_path: str) -> Dict:
         )
         return _finalize_result(result)
 
-    if assemblyai_error:
         result = _build_no_diarization_placeholder_result(
             processed_audio=processed_audio,
-            message="AssemblyAI transcription failed. Using placeholder transcript.",
-            transcript_mode="assemblyai_error_m1_m2",
         )
         result["sounds"] = sound_events
         result["processing"].update(
@@ -1501,7 +1444,6 @@ def diarize_file(input_path: str) -> Dict:
 
     result = _build_no_diarization_placeholder_result(
         processed_audio=processed_audio,
-        message="No transcription provider configured. Add AssemblyAI or Whisper API key.",
         transcript_mode="no_transcription_provider_m1_m2",
     )
     result["sounds"] = sound_events

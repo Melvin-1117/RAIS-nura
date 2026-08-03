@@ -10,7 +10,7 @@ export type TranscriptEntry = {
   confidence: number;
 };
 
-export type AssemblyAIUtterance = {
+export type LocalUtterance = {
   speaker?: string;
   text?: string;
   start?: number;
@@ -18,14 +18,14 @@ export type AssemblyAIUtterance = {
   confidence?: number;
 };
 
-export type AssemblyAITranscriptResponse = {
+export type LocalTranscriptResponse = {
   id: string;
   status: 'queued' | 'processing' | 'completed' | 'error';
   error?: string;
-  utterances?: AssemblyAIUtterance[];
+  utterances?: LocalUtterance[];
 };
 
-export type AssemblyAIPartialMessage = {
+export type PartialTranscriptMessage = {
   message_type: 'PartialTranscript';
   text: string;
   audio_start: number;
@@ -33,7 +33,7 @@ export type AssemblyAIPartialMessage = {
   confidence?: number;
 };
 
-export type AssemblyAIFinalMessage = {
+export type FinalTranscriptMessage = {
   message_type: 'FinalTranscript';
   text: string;
   audio_start: number;
@@ -42,19 +42,19 @@ export type AssemblyAIFinalMessage = {
   words?: Array<{ confidence?: number }>;
 };
 
-export type AssemblyAISessionBeginsMessage = {
+export type SessionBeginsMessage = {
   message_type: 'SessionBegins';
   session_id: string;
   expires_at: number;
 };
 
-export type AssemblyAIErrorMessage = {
+export type ErrorMessage = {
   message_type: 'Error';
   error: string;
 };
 
-export type AssemblyAILiveMessage =
-  | AssemblyAIPartialMessage
-  | AssemblyAIFinalMessage
-  | AssemblyAISessionBeginsMessage
-  | AssemblyAIErrorMessage;
+export type LiveTranscriptMessage =
+  | PartialTranscriptMessage
+  | FinalTranscriptMessage
+  | SessionBeginsMessage
+  | ErrorMessage;

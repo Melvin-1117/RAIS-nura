@@ -92,13 +92,13 @@ export const DEMO_RESULT: DemoResult = {
       start: 0.0,
       end: 8.2,
       speaker: "Speaker A",
-      text: "Good morning everyone. Let's get started with our weekly sync. I wanted to cover the progress on the audio intelligence pipeline first.",
+      text: "Good morning everyone. Let me cover the progress on the audio intelligence pipeline first.",
     },
     {
       start: 8.5,
       end: 18.1,
       speaker: "Speaker B",
-      text: "Sure. I finished integrating the speaker diarization module yesterday. We're now using pyannote 3.1 and the accuracy on our test set improved from 82 to 91 percent.",
+      text: "Sure. I finished integrating the speaker diarization module yesterday. We're using pyannote 3.1 and local Faster-Whisper ASR for fast offline performance.",
     },
     {
       start: 18.4,
@@ -122,7 +122,7 @@ export const DEMO_RESULT: DemoResult = {
       start: 55.6,
       end: 68.0,
       speaker: "Speaker A",
-      text: "Good catch. Let's set it at 0.6 for now and we can tune it later. How's the mobile app coming along? Are we still using Expo managed workflow?",
+      text: "Good catch. Let me set it at 0.6 for now and we can tune it later. How's the mobile app coming along? Are we still using Expo managed workflow?",
     },
     {
       start: 68.3,
@@ -152,7 +152,7 @@ export const DEMO_RESULT: DemoResult = {
       start: 125.8,
       end: 140.2,
       speaker: "Speaker B",
-      text: "One last thing — I deployed the backend to our staging server and the health check endpoint is responding. The AssemblyAI integration is using the universal-3-pro model now which gives us better accuracy on multilingual content.",
+      text: "One last thing — I deployed the backend to our staging server and the health check endpoint is responding. The local Faster-Whisper integration is using distil-whisper now which gives us sub-second latency and full offline privacy.",
     },
     {
       start: 140.5,
@@ -230,7 +230,7 @@ export const DEMO_RESULT: DemoResult = {
     duration_seconds: 158.0,
     source_sample_rate: 44100,
     output_sample_rate: 16000,
-    transcript_mode: "assemblyai_universal_3_pro",
+    transcript_mode: "local_distil_whisper",
     separation_confirmed: true,
     speech_energy_ratio: 0.82,
     background_energy_ratio: 0.18,

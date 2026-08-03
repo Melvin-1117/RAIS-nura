@@ -1,9 +1,9 @@
 import Constants from 'expo-constants';
 
 import {
-  AssemblyAIFinalMessage,
-  AssemblyAILiveMessage,
-  AssemblyAIPartialMessage,
+  FinalTranscriptMessage,
+  LiveTranscriptMessage,
+  PartialTranscriptMessage,
   TranscriptEntry,
 } from '../types/transcript';
 
@@ -105,17 +105,50 @@ export const transcribeFileWithDiarization = async (fileUri: string): Promise<Tr
   });
 };
 
+export type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+
+export type LivePayload = {
+  chunk_id?: number;
+  timestamp?: number;
+  transcript_delta?: string;
+  active_speakers?: string[];
+  sound_events?: Array<{
+    label: string;
+    category?: string;
+    confidence: number;
+    start: number;
+    end: number;
+    distance?: string;
+    distance_score?: number;
+    intensity?: string;
+    intensity_pct?: number;
+  }>;
+  intensity_pct?: number;
+  connection_state?: string;
+  message_type?: string;
+  text?: string;
+  audio_start?: number;
+  audio_end?: number;
+  confidence?: number;
+  speaker?: string;
+};
+
 type LiveCallbacks = {
   onPartial: (entry: TranscriptEntry) => void;
   onFinal: (entry: TranscriptEntry) => void;
+  onPayload?: (payload: LivePayload) => void;
+  onStateChange?: (state: ConnectionState) => void;
   onError: (message: string) => void;
   onOpen?: () => void;
   onClose?: () => void;
 };
 
-export class AssemblyAILiveClient {
+export class LocalLiveTranscriptionClient {
   private ws: WebSocket | null = null;
   private readonly callbacks: LiveCallbacks;
+  private isIntentionallyClosed = false;
+  private reconnectAttempt = 0;
+  private maxReconnectAttempts = 5;
 
   constructor(callbacks: LiveCallbacks) {
     this.callbacks = callbacks;
@@ -123,16 +156,34 @@ export class AssemblyAILiveClient {
 
   connect() {
     const url = getBackendWsUrl();
+    this.isIntentionallyClosed = false;
+    this.callbacks.onStateChange?.(this.reconnectAttempt > 0 ? 'reconnecting' : 'connecting');
 
     try {
       this.ws = new WebSocket(url);
 
       this.ws.onopen = () => {
+        this.reconnectAttempt = 0;
+        this.callbacks.onStateChange?.('connected');
         this.callbacks.onOpen?.();
       };
 
       this.ws.onclose = () => {
         this.callbacks.onClose?.();
+
+        // Auto-reconnect with exponential backoff on drop
+        if (!this.isIntentionallyClosed && this.reconnectAttempt < this.maxReconnectAttempts) {
+          this.reconnectAttempt += 1;
+          this.callbacks.onStateChange?.('reconnecting');
+          const delay = Math.min(5000, 1000 * 2 ** (this.reconnectAttempt - 1));
+          setTimeout(() => {
+            if (!this.isIntentionallyClosed) {
+              this.connect();
+            }
+          }, delay);
+        } else {
+          this.callbacks.onStateChange?.('disconnected');
+        }
       };
 
       this.ws.onerror = () => {
@@ -141,32 +192,22 @@ export class AssemblyAILiveClient {
 
       this.ws.onmessage = (event) => {
         try {
-          const payload = JSON.parse(event.data as string);
+          const payload: LivePayload = JSON.parse(event.data as string);
 
           if (payload.message_type === 'Error') {
-            this.callbacks.onError(payload.error || 'Local live transcription error');
+            this.callbacks.onError((payload as any).error || 'Local live transcription error');
             return;
           }
 
-          if (payload.message_type === 'PartialTranscript') {
-            const partial: TranscriptEntry = {
-              id: `partial-${payload.audio_start || Date.now()}`,
-              speaker: (payload.speaker as any) || 'A',
-              text: payload.text || '',
-              startTime: payload.audio_start || 0,
-              endTime: payload.audio_end || 0,
-              isFinal: false,
-              confidence: payload.confidence || 0.85,
-            };
-            this.callbacks.onPartial(partial);
-            return;
-          }
+          // Callback with full M8 payload
+          this.callbacks.onPayload?.(payload);
 
-          if (payload.message_type === 'FinalTranscript') {
+          const text = payload.transcript_delta || payload.text || '';
+          if (text) {
             const finalMsg: TranscriptEntry = {
               id: `final-${payload.audio_start || Date.now()}`,
-              speaker: (payload.speaker as any) || 'A',
-              text: payload.text || '',
+              speaker: (payload.speaker as any) || (payload.active_speakers?.[0] || 'A'),
+              text: text,
               startTime: payload.audio_start || 0,
               endTime: payload.audio_end || 0,
               isFinal: true,
@@ -180,6 +221,7 @@ export class AssemblyAILiveClient {
       };
     } catch (err: any) {
       this.callbacks.onError(err?.message || 'WebSocket initialization failed');
+      this.callbacks.onStateChange?.('disconnected');
     }
   }
 
@@ -196,7 +238,9 @@ export class AssemblyAILiveClient {
   }
 
   close() {
+    this.isIntentionallyClosed = true;
     this.ws?.close();
     this.ws = null;
+    this.callbacks.onStateChange?.('disconnected');
   }
 }

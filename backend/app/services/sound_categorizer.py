@@ -127,6 +127,76 @@ def merge_adjacent_windows(
     return merged
 
 
+def predict_yamnet_sounds(
+    samples: np.ndarray,
+    sr: int = 16000,
+    frame_duration_sec: float = 1.0,
+) -> List[Dict[str, Any]]:
+    """
+    Direct raw-chunk sound categorization for M8 live path.
+    Runs feature extraction and classification directly over a raw audio sample array
+    without requiring full Demucs audio separation.
+    """
+    if len(samples) < int(sr * 0.3):
+        return []
+
+    win_len = int(sr * frame_duration_sec)
+    total_samples = len(samples)
+
+    if total_samples < win_len:
+        window_data = samples
+        start_sec = 0.0
+        end_sec = round(total_samples / float(sr), 2)
+        windows_to_process = [(window_data, start_sec, end_sec)]
+    else:
+        windows_to_process = []
+        hop_len = int(sr * 0.5)
+        for start_idx in range(0, total_samples - win_len + 1, hop_len):
+            w_data = samples[start_idx : start_idx + win_len]
+            s_sec = round(start_idx / float(sr), 2)
+            e_sec = round((start_idx + win_len) / float(sr), 2)
+            windows_to_process.append((w_data, s_sec, e_sec))
+
+    events = []
+    for w_data, s_sec, e_sec in windows_to_process:
+        win_rms = float(np.sqrt(np.mean(np.square(w_data))) + 1e-8)
+        if win_rms < 0.005:
+            continue
+
+        fft_mag = np.abs(np.fft.rfft(w_data))
+        freqs = np.fft.rfftfreq(len(w_data), 1.0 / sr)
+        sum_mag = np.sum(fft_mag) + 1e-8
+
+        spectral_centroid = float(np.sum(freqs * fft_mag) / sum_mag)
+        zero_crossings = np.diff(np.signbit(w_data))
+        zcr = float(np.sum(zero_crossings) / max(1, len(w_data)))
+
+        low_band = float(np.sum(fft_mag[freqs < 500]) / sum_mag)
+        mid_band = float(np.sum(fft_mag[(freqs >= 500) & (freqs < 3000)]) / sum_mag)
+        high_band = float(np.sum(fft_mag[freqs >= 3000]) / sum_mag)
+
+        label, raw_confidence = _classify_window_features(
+            rms=win_rms,
+            centroid=spectral_centroid,
+            zcr=zcr,
+            low_band=low_band,
+            mid_band=mid_band,
+            high_band=high_band,
+            duration=len(w_data) / float(sr),
+        )
+
+        events.append(
+            {
+                "label": label,
+                "confidence": round(raw_confidence, 2),
+                "start": s_sec,
+                "end": e_sec,
+            }
+        )
+
+    return merge_adjacent_windows(events, max_gap_seconds=0.3)
+
+
 def categorize_background_stream(
     background_audio_path: str,
     separation_status: str = "completed",

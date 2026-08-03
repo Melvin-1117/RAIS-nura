@@ -37,9 +37,9 @@ const FEATURES = [
 const TECH_STACK = [
   { name: "React Native", role: "Mobile Framework", icon: "⚛️" },
   { name: "FastAPI", role: "Backend API", icon: "⚡" },
-  { name: "AssemblyAI", role: "Speech-to-Text", icon: "🗣️" },
+  { name: "Faster-Whisper", role: "Local Speech-to-Text", icon: "🗣️" },
   { name: "pyannote.audio", role: "Speaker Diarization", icon: "🎯" },
-  { name: "Whisper", role: "Local ASR Fallback", icon: "🤫" },
+  { name: "YAMNet", role: "Sound Classification", icon: "🤫" },
   { name: "Next.js", role: "Web Demo", icon: "▲" },
 ];
 

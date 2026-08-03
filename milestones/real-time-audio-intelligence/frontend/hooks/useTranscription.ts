@@ -9,7 +9,7 @@ import {
 import { Platform } from 'react-native';
 import { useCallback, useMemo, useRef } from 'react';
 
-import { AssemblyAILiveClient, transcribeFileWithDiarization } from '../services/assemblyai';
+import { LocalLiveTranscriptionClient, transcribeFileWithDiarization } from '../services/liveTranscriptionClient';
 import { useTranscriptStore } from '../store/transcriptStore';
 import { TranscriptEntry } from '../types/transcript';
 
@@ -81,7 +81,7 @@ export const useTranscription = () => {
     addOrUpdate,
   } = useTranscriptStore();
 
-  const liveClientRef = useRef<AssemblyAILiveClient | null>(null);
+  const liveClientRef = useRef<LocalLiveTranscriptionClient | null>(null);
   const chunkLoopRunningRef = useRef(false);
   const recorderRef = useRef<AudioRecorder | null>(null);
 
@@ -170,7 +170,7 @@ export const useTranscription = () => {
         playsInSilentMode: true,
       });
 
-      const client = new AssemblyAILiveClient({
+      const client = new LocalLiveTranscriptionClient({
         onPartial: (entry: TranscriptEntry) => addOrUpdate(entry),
         onFinal: (entry: TranscriptEntry) => addOrUpdate(entry),
         onError: (message: string) => setError(message),

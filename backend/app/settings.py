@@ -1,7 +1,5 @@
 from pathlib import Path
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 ENV_FILE_PATH = Path(__file__).resolve().parents[1] / ".env"
 
@@ -10,12 +8,6 @@ class Settings(BaseSettings):
     hf_token: str = ""
     pyannote_model: str = "pyannote/speaker-diarization-3.1"
     target_sample_rate: int = 16000
-    assemblyai_api_key: str = ""
-    assemblyai_base_url: str = "https://api.assemblyai.com/v2"
-    assemblyai_poll_attempts: int = 90
-    assemblyai_poll_interval_seconds: float = 2.0
-    assemblyai_speech_models: str = "universal-3-pro"
-    prefer_assemblyai_transcription: bool = False
     whisper_api_key: str = ""
     whisper_api_base_url: str = "https://api.openai.com/v1"
     whisper_model: str = "whisper-1"

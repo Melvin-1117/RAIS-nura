@@ -14,21 +14,27 @@ const speakerColors: Record<string, string> = {
   'Speaker A': colors.primary,
   'Speaker B': colors.secondary,
   'Speaker C': colors.tertiary,
+  Unknown: colors.onSurfaceVariant,
 };
 
-const defaultBackgroundSounds = [
-  { icon: '🗣️', label: 'Human Speech', distance: 'Near (< 1m)' },
-  { icon: '💨', label: 'HVAC Ambient', distance: 'Mid (2m)' },
-  { icon: '⌨️', label: 'Mechanical Typing', distance: 'Near (1m)' },
-];
+const categoryIcons: Record<string, string> = {
+  Natural: '🌿',
+  Artificial: '⚙️',
+  'Human Activity': '🤧',
+  Music: '🎵',
+  Animal: '🐾',
+  Unclassified: '❓',
+};
 
 export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
-  const { transcript, startLive, stopLive, error } = useTranscription();
+  const { transcript, connectionState, latestPayload, startLive, stopLive, error } = useTranscription();
   const [seconds, setSeconds] = useState(0);
+
   const pulseLive = useRef(new Animated.Value(1)).current;
+  const vuAnim = useRef(new Animated.Value(20)).current;
   const scrollViewRef = useRef<ScrollView>(null);
 
-  // Pulse animation for LIVE badge
+  // Pulse animation for LIVE / Active status badge
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
@@ -39,6 +45,17 @@ export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
     loop.start();
     return () => loop.stop();
   }, [pulseLive]);
+
+  // Animate live VU meter bar per incoming chunk intensity_pct
+  useEffect(() => {
+    const targetPct = latestPayload?.intensity_pct ?? 25;
+    Animated.spring(vuAnim, {
+      toValue: Math.max(8, Math.min(100, targetPct)),
+      friction: 5,
+      tension: 40,
+      useNativeDriver: false,
+    }).start();
+  }, [latestPayload, vuAnim]);
 
   // Session Duration Timer
   useEffect(() => {
@@ -79,7 +96,7 @@ export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
   const formattedEntries: LiveEntry[] = transcript.map((item) => {
     const date = new Date(item.startTime * 1000);
     const timeStr = `${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
-    const speakerKey = item.speaker ? `Speaker ${item.speaker}` : 'Speaker A';
+    const speakerKey = item.speaker ? (item.speaker.startsWith('Speaker') ? item.speaker : `Speaker ${item.speaker}`) : 'Speaker A';
     const color = speakerColors[speakerKey] || colors.primary;
 
     return {
@@ -95,7 +112,30 @@ export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
     onBack();
   };
 
-  const uniqueSpeakersCount = new Set(transcript.map((t) => t.speaker)).size || 1;
+  // 👥 Active Speakers panel data
+  const activeSpeakersList = latestPayload?.active_speakers && latestPayload.active_speakers.length > 0
+    ? latestPayload.active_speakers
+    : ['Speaker A'];
+
+  // 🔊 Background Sounds & 📍 Distance Map panel data
+  const soundEventsList = latestPayload?.sound_events || [];
+
+  // Connection State Badge Info
+  const connectionText =
+    connectionState === 'connected'
+      ? 'Listening…'
+      : connectionState === 'reconnecting'
+      ? 'Reconnecting…'
+      : connectionState === 'connecting'
+      ? 'Connecting…'
+      : 'Stopped';
+
+  const connectionColor =
+    connectionState === 'connected'
+      ? colors.tertiary
+      : connectionState === 'reconnecting'
+      ? '#F59E0B'
+      : colors.onSurfaceVariant;
 
   return (
     <View style={styles.container}>
@@ -118,83 +158,37 @@ export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
           </View>
         )}
 
-        {/* ── Stats Row ────────────────────────────────────── */}
+        {/* ── Stats & Connection Status Row ─────────────────── */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Speakers</Text>
+            <Text style={styles.statLabel}>Active Speakers</Text>
             <Text style={[styles.statValue, { color: colors.primary }]}>
-              {String(uniqueSpeakersCount).padStart(2, '0')}
+              {String(activeSpeakersList.length).padStart(2, '0')}
             </Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statLabel}>Entries</Text>
+            <Text style={styles.statLabel}>Chunks Processed</Text>
             <Text style={[styles.statValue, { color: colors.secondary }]}>
-              {String(transcript.length).padStart(2, '0')}
+              {String(latestPayload?.chunk_id || 0).padStart(2, '0')}
             </Text>
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Status</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Animated.View style={[styles.liveStatusDot, { opacity: pulseLive }]} />
-              <Text style={[styles.statValue, { color: colors.tertiary }]}>Local Live</Text>
+              <Animated.View style={[styles.liveStatusDot, { backgroundColor: connectionColor, opacity: pulseLive }]} />
+              <Text style={[styles.statValue, { color: connectionColor, fontSize: 13 }]}>
+                {connectionText}
+              </Text>
             </View>
           </View>
         </View>
 
-        {/* ── Audio Monitor ────────────────────────────────── */}
-        <View style={styles.glassCard}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Local Audio Stream</Text>
-            <Text style={{ color: colors.primary, fontSize: 20 }}>📊</Text>
-          </View>
-          <View style={styles.waveformContainer}>
-            <WaveformPlaceholder
-              bars={Array.from({ length: 32 }, () => Math.random() * 80 + 20)}
-              color={colors.primary}
-            />
-          </View>
-          <View style={styles.monitorFooter}>
-            <View>
-              <Text style={styles.monitorLabel}>Engine</Text>
-              <Text style={styles.monitorValue}>Faster-Whisper (Local)</Text>
-            </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={styles.monitorLabel}>Duration</Text>
-              <Text style={[styles.monitorDuration, { color: colors.primary }]}>{formatTime(seconds)}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ── Signal Intensity ─────────────────────────────── */}
-        <View style={styles.glassCard}>
-          <View style={[styles.cardTitleBordered, { borderLeftColor: colors.secondary }]}>
-            <Text style={styles.cardTitle}>Signal Intensity</Text>
-          </View>
-          <View style={styles.intensityGroup}>
-            {[
-              { label: 'Speech Presence', value: transcript.length > 0 ? 88 : 35, color: colors.secondary },
-              { label: 'Ambient Level', value: 20, color: colors.primary },
-              { label: 'Signal-to-Noise', value: 92, color: colors.tertiary },
-            ].map((item) => (
-              <View key={item.label} style={styles.intensityRow}>
-                <View style={styles.intensityHeader}>
-                  <Text style={styles.intensityLabel}>{item.label}</Text>
-                  <Text style={[styles.intensityValue, { color: item.color }]}>{item.value}%</Text>
-                </View>
-                <View style={styles.intensityTrack}>
-                  <View style={[styles.intensityFill, { width: `${item.value}%`, backgroundColor: item.color }]} />
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* ── Transcript ───────────────────────────────────── */}
-        <View style={[styles.glassCard, { maxHeight: 320 }]}>
+        {/* ── PANEL 1: 🎤 Live Transcript ──────────────────── */}
+        <View style={[styles.glassCard, { maxHeight: 260 }]}>
           <View style={styles.transcriptHeader}>
-            <Text style={styles.cardTitle}>Live Transcript</Text>
+            <Text style={styles.cardTitle}>🎤 Live Transcript</Text>
             <View style={styles.autoScrollBadge}>
-              <Text style={styles.autoScrollText}>REAL-TIME ASR</Text>
+              <Text style={styles.autoScrollText}>REAL-TIME ASR (&lt;500ms)</Text>
             </View>
           </View>
           <ScrollView
@@ -204,7 +198,7 @@ export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
             showsVerticalScrollIndicator={false}
           >
             {formattedEntries.length === 0 ? (
-              <Text style={styles.emptyText}>Listening for speech in real-time...</Text>
+              <Text style={styles.emptyText}>Listening for continuous speech in real-time...</Text>
             ) : (
               formattedEntries.map((entry, i) => (
                 <View key={i} style={styles.transcriptEntry}>
@@ -221,20 +215,125 @@ export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
           </ScrollView>
         </View>
 
-        {/* ── Background Sounds ────────────────────────────── */}
+        {/* ── PANEL 2: 👥 Active Speakers ───────────────────── */}
         <View style={styles.glassCard}>
-          <Text style={[styles.cardTitle, { marginBottom: 12 }]}>Background Sound Classification</Text>
-          {defaultBackgroundSounds.map((sound) => (
-            <View key={sound.label} style={styles.soundRow}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>👥 Active Speakers</Text>
+            <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>
+              VAD + PROFILE ENROLLMENT
+            </Text>
+          </View>
+          <View style={styles.speakerRow}>
+            {activeSpeakersList.map((spk) => {
+              const spkColor = speakerColors[spk] || colors.primary;
+              return (
+                <View key={spk} style={[styles.activeSpeakerPill, { borderColor: `${spkColor}50` }]}>
+                  <Animated.View style={[styles.speakerPulseDot, { backgroundColor: spkColor, opacity: pulseLive }]} />
+                  <Text style={[styles.activeSpeakerName, { color: spkColor }]}>{spk}</Text>
+                  <Text style={styles.speakingStatusText}>Active</Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* ── PANEL 3 & 4: 🔊 Background Sounds & 📍 Distance Map ── */}
+        <View style={styles.glassCard}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>🔊 Background Sounds & 📍 Distance Map</Text>
+            <Text style={{ fontSize: 11, color: colors.onSurfaceVariant }}>RAW CHUNK MODEL</Text>
+          </View>
+
+          {soundEventsList.length === 0 ? (
+            <View style={styles.soundRow}>
               <View style={styles.soundLeft}>
-                <Text style={{ fontSize: 16, color: colors.primary }}>{sound.icon}</Text>
-                <Text style={styles.soundLabel}>{sound.label}</Text>
+                <Text style={{ fontSize: 16, color: colors.primary }}>🔉</Text>
+                <Text style={styles.soundLabel}>Ambient Background</Text>
               </View>
               <View style={styles.distancePill}>
-                <Text style={styles.distanceText}>{sound.distance}</Text>
+                <Text style={styles.distanceText}>📍 Mid (1–5m)</Text>
               </View>
             </View>
-          ))}
+          ) : (
+            soundEventsList.map((ev, idx) => {
+              const icon = categoryIcons[ev.category || 'Artificial'] || '🔉';
+              const distTier = ev.distance || 'Mid';
+              const distBadgeColor =
+                distTier === 'Near' ? '#4edea3' : distTier === 'Far' ? '#a78bfa' : '#F59E0B';
+
+              return (
+                <View key={idx} style={styles.soundRow}>
+                  <View style={styles.soundLeft}>
+                    <Text style={{ fontSize: 16 }}>{icon}</Text>
+                    <View>
+                      <Text style={styles.soundLabel}>{ev.label}</Text>
+                      <Text style={{ fontSize: 10, color: colors.onSurfaceVariant }}>
+                        {ev.category || 'Artificial'} • {Math.round((ev.confidence || 0.8) * 100)}% conf
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={[styles.distancePill, { borderColor: `${distBadgeColor}40`, borderWidth: 1 }]}>
+                    <Text style={[styles.distanceText, { color: distBadgeColor }]}>
+                      {distTier === 'Near' ? '🎯 Near (<1m)' : distTier === 'Far' ? '📡 Far (>5m)' : '📍 Mid (1–5m)'}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </View>
+
+        {/* ── PANEL 5: 📊 Animated Intensity VU Meter ───────── */}
+        <View style={styles.glassCard}>
+          <View style={[styles.cardTitleBordered, { borderLeftColor: colors.secondary }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={styles.cardTitle}>📊 Live Intensity VU Meter</Text>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: colors.secondary }}>
+                {Math.round(latestPayload?.intensity_pct || 25)}% Peak RMS
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.intensityGroup}>
+            <View style={styles.intensityRow}>
+              <View style={styles.intensityHeader}>
+                <Text style={styles.intensityLabel}>Real-Time Micro-Loudness</Text>
+                <Text style={[styles.intensityValue, { color: colors.secondary }]}>
+                  {latestPayload?.intensity_pct && latestPayload.intensity_pct > 70
+                    ? '🔴 High'
+                    : latestPayload?.intensity_pct && latestPayload.intensity_pct >= 30
+                    ? '🟡 Medium'
+                    : '🟢 Low'}
+                </Text>
+              </View>
+              <View style={styles.intensityTrack}>
+                <Animated.View
+                  style={[
+                    styles.intensityFill,
+                    {
+                      width: vuAnim.interpolate({
+                        inputRange: [0, 100],
+                        outputRange: ['0%', '100%'],
+                      }),
+                      backgroundColor:
+                        latestPayload?.intensity_pct && latestPayload.intensity_pct > 70
+                          ? colors.error
+                          : latestPayload?.intensity_pct && latestPayload.intensity_pct >= 30
+                          ? '#F59E0B'
+                          : colors.tertiary,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+
+            <View style={styles.waveformContainer}>
+              <WaveformPlaceholder
+                bars={Array.from({ length: 32 }, () => Math.random() * (latestPayload?.intensity_pct || 30) + 15)}
+                color={colors.primary}
+              />
+            </View>
+          </View>
         </View>
       </ScrollView>
     </View>
@@ -272,11 +371,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     padding: spacing.md,
     alignItems: 'center',
-    justifyContent: 'center',
+    justify.content: 'center',
   },
-  statLabel: { ...typography.labelMd, color: colors.onSurfaceVariant, marginBottom: 4 },
+  statLabel: { ...typography.labelMd, color: colors.onSurfaceVariant, marginBottom: 4, textAlign: 'center' },
   statValue: { ...typography.headlineLg },
-  liveStatusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.tertiary },
+  liveStatusDot: { width: 8, height: 8, borderRadius: 4 },
 
   glassCard: {
     backgroundColor: colors.card,
@@ -285,23 +384,33 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     padding: spacing.lg,
   },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
   cardTitle: { ...typography.headlineMd, color: colors.onSurface },
-  cardTitleBordered: { borderLeftWidth: 4, paddingLeft: spacing.md, marginBottom: spacing.lg },
+  cardTitleBordered: { borderLeftWidth: 4, paddingLeft: spacing.md, marginBottom: spacing.md },
 
-  waveformContainer: { height: 120, justifyContent: 'center' },
+  speakerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },
+  activeSpeakerPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  speakerPulseDot: { width: 8, height: 8, borderRadius: 4 },
+  activeSpeakerName: { ...typography.labelMd, fontWeight: '700' },
+  speakingStatusText: { ...typography.labelMd, color: colors.onSurfaceVariant, fontSize: 10 },
 
-  monitorFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: spacing.lg },
-  monitorLabel: { ...typography.labelMd, color: colors.onSurfaceVariant },
-  monitorValue: { ...typography.bodyMd, fontFamily: 'monospace' },
-  monitorDuration: { ...typography.headlineMd },
+  waveformContainer: { height: 70, justifyContent: 'center', marginTop: spacing.sm },
 
   intensityGroup: { gap: spacing.md },
-  intensityRow: { gap: 4 },
+  intensityRow: { gap: 6 },
   intensityHeader: { flexDirection: 'row', justifyContent: 'space-between' },
   intensityLabel: { ...typography.labelMd, color: colors.onSurfaceVariant },
-  intensityValue: { ...typography.labelMd },
-  intensityTrack: { height: 8, backgroundColor: colors.surfaceContainer, borderRadius: radius.pill, overflow: 'hidden' },
+  intensityValue: { ...typography.labelMd, fontWeight: '700' },
+  intensityTrack: { height: 10, backgroundColor: colors.surfaceContainer, borderRadius: radius.pill, overflow: 'hidden' },
   intensityFill: { height: '100%', borderRadius: radius.pill },
 
   transcriptHeader: {
@@ -311,11 +420,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.05)',
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.sm,
   },
   autoScrollBadge: { backgroundColor: 'rgba(192, 193, 255, 0.1)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
-  autoScrollText: { ...typography.labelMd, color: colors.primary, fontSize: 10 },
-  transcriptFeed: { maxHeight: 220 },
+  autoScrollText: { ...typography.labelMd, color: colors.primary, fontSize: 10, fontWeight: '700' },
+  transcriptFeed: { maxHeight: 180 },
   emptyText: { ...typography.bodyMd, color: colors.onSurfaceVariant, fontStyle: 'italic', paddingVertical: spacing.md },
   transcriptEntry: { marginBottom: spacing.md },
   transcriptMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 4 },
@@ -334,12 +443,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   soundLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  soundLabel: { ...typography.bodySm, color: colors.onSurface },
+  soundLabel: { ...typography.bodySm, color: colors.onSurface, fontWeight: '600' },
   distancePill: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: radius.pill,
   },
-  distanceText: { fontSize: 10, fontWeight: '700', color: colors.onSurfaceVariant },
+  distanceText: { fontSize: 10, fontWeight: '700' },
 });

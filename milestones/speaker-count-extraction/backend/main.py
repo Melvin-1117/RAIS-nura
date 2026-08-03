@@ -28,8 +28,6 @@ async def log_runtime_configuration() -> None:
     print("\n=== Backend Configuration Summary ===")
     print(f"ENV file path: {ENV_FILE_PATH}")
     print(f"HF_TOKEN: {'SET' if settings.hf_token else 'UNSET'}")
-    print(f"ASSEMBLYAI_API_KEY: {'SET' if settings.assemblyai_api_key else 'UNSET'}")
-    print(f"Prefer AssemblyAI transcription: {settings.prefer_assemblyai_transcription}")
     print(f"WHISPER_API_KEY: {'SET' if settings.whisper_api_key else 'UNSET'}")
     print(f"WHISPER_API_BASE_URL: {settings.whisper_api_base_url}")
     print(f"Enable pyannote diarization: {settings.enable_pyannote_diarization}")
