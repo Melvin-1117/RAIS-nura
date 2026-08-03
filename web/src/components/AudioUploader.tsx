@@ -76,10 +76,10 @@ export default function AudioUploader({
           </div>
 
           <div>
-            <p className="text-[var(--color-on-surface)] font-semibold text-lg">
+            <p className="text-[var(--color-on-surface)] font-semibold text-base">
               Drop your audio file here
             </p>
-            <p className="text-[var(--color-on-surface-variant)] text-sm mt-1">
+            <p className="text-[var(--color-on-surface-variant)] text-xs mt-1">
               or click to browse • MP3, WAV, M4A up to 25MB
             </p>
           </div>

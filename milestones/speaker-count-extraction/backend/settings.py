@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     enable_pyannote_diarization: bool = False
     enable_local_asr_fallback: bool = False
 
-    model_config = SettingsConfigDict(env_file=ENV_FILE_PATH, env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=ENV_FILE_PATH, env_file_encoding="utf-8", extra="ignore")
 
 
 settings = Settings()

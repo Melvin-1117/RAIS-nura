@@ -5,50 +5,38 @@ import Link from "next/link";
 export default function Navbar() {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/[0.07] bg-[#09090B]/80 backdrop-blur-xl">
-      <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-3 group">
-          <div className="w-9 h-9 rounded-xl gradient-primary flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:shadow-indigo-500/40 transition-shadow">
-            <span className="text-white text-sm font-bold">R</span>
+        <Link href="/" className="flex items-center gap-2.5 group">
+          <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center shadow-md shadow-indigo-500/20 group-hover:shadow-indigo-500/30 transition-shadow">
+            <span className="text-white text-xs font-bold">R</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-white font-bold text-lg leading-tight tracking-tight">
+            <span className="text-white font-bold text-sm leading-tight tracking-tight">
               RAIS
             </span>
-            <span className="text-[10px] text-[var(--color-on-surface-variant)] font-semibold tracking-[0.15em] uppercase leading-none">
+            <span className="text-[9px] text-[var(--color-on-surface-variant)] font-semibold tracking-[0.15em] uppercase leading-none">
               Audio Intelligence
             </span>
           </div>
         </Link>
 
         {/* Navigation Links */}
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-5">
           <Link
-            href="/#features"
-            className="text-sm text-[var(--color-on-surface-variant)] hover:text-white transition-colors"
+            href="/results?demo=true"
+            className="text-xs text-[var(--color-on-surface-variant)] hover:text-white transition-colors font-medium"
           >
-            Features
-          </Link>
-          <Link
-            href="/#demo"
-            className="text-sm text-[var(--color-on-surface-variant)] hover:text-white transition-colors"
-          >
-            Demo
-          </Link>
-          <Link
-            href="/#tech"
-            className="text-sm text-[var(--color-on-surface-variant)] hover:text-white transition-colors"
-          >
-            Tech Stack
+            Try Demo
           </Link>
           <a
             href="https://github.com/Melvin-1117/RAIS-nura"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-[var(--color-on-surface-variant)] hover:text-white transition-colors flex items-center gap-1.5"
+            className="text-xs text-[var(--color-on-surface-variant)] hover:text-white transition-colors flex items-center gap-1.5 font-medium"
           >
             <svg
-              className="w-4 h-4"
+              className="w-3.5 h-3.5"
               fill="currentColor"
               viewBox="0 0 24 24"
             >

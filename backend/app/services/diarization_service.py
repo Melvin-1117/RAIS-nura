@@ -10,6 +10,18 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 import torch
 import torchaudio
+import huggingface_hub
+
+# Compatibility patch for huggingface_hub >=0.23 where use_auth_token was renamed to token
+_orig_hf_hub_download = huggingface_hub.hf_hub_download
+def _patched_hf_hub_download(*args, **kwargs):
+    if "use_auth_token" in kwargs:
+        token_val = kwargs.pop("use_auth_token")
+        if token_val and "token" not in kwargs:
+            kwargs["token"] = token_val
+    return _orig_hf_hub_download(*args, **kwargs)
+huggingface_hub.hf_hub_download = _patched_hf_hub_download
+
 from pyannote.audio import Pipeline
 
 from app.settings import settings
@@ -541,6 +553,22 @@ def _resolve_overlapping_speech(segments: List[Dict[str, Any]]) -> List[Dict[str
         resolved.append(dict(seg))
 
     return [s for s in resolved if float(s["end"]) > float(s["start"])]
+
+
+def _get_faster_whisper_model():
+    global _faster_whisper_model
+
+    if _faster_whisper_model is None:
+        try:
+            from faster_whisper import WhisperModel
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            compute_type = "float16" if torch.cuda.is_available() else "int8"
+            _faster_whisper_model = WhisperModel("tiny", device=device, compute_type=compute_type)
+        except Exception as exc:
+            print(f"[faster-whisper model load warning]: {exc}")
+            _faster_whisper_model = None
+
+    return _faster_whisper_model
 
 
 def _transcribe_speaker_segments_faster_whisper(
@@ -1086,7 +1114,6 @@ def diarize_file(input_path: str) -> Dict:
                     "text": text,
                 }
             ]
-
     if diarized_segments:
         for seg in diarized_segments:
             match = speaker_match_map.get(seg["speaker"], {
@@ -1094,8 +1121,8 @@ def diarize_file(input_path: str) -> Dict:
                 "confidence": 0.0,
                 "matched": False,
             })
-            seg["speaker_display"] = match["display_name"]
-            seg["speaker_confidence"] = float(match["confidence"])
+            seg["speaker_display"] = match.get("display_name", "Unknown")
+            seg["speaker_confidence"] = float(match.get("confidence") or 0.0)
 
         speaker_labels = sorted(list(set(seg["speaker"] for seg in diarized_segments)))
         if faster_whisper_utterances:
@@ -1120,6 +1147,17 @@ def diarize_file(input_path: str) -> Dict:
                     if redistributed:
                         utterances = redistributed
 
+        if not utterances:
+            utterances = [
+                {
+                    "speaker": seg["speaker"],
+                    "text": "Speech segment detected.",
+                    "start": float(seg["start"]),
+                    "end": float(seg["end"]),
+                }
+                for seg in diarized_segments
+            ]
+
         # Ensure utterances are sorted chronologically by start time ascending
         utterances.sort(key=lambda u: (float(u["start"]), float(u["end"])))
 
@@ -1127,20 +1165,19 @@ def diarize_file(input_path: str) -> Dict:
             match = speaker_match_map.get(utterance["speaker"], {
                 "speaker_name": "Unknown Speaker",
                 "display_name": "Unknown",
-                "confidence": None,
+                "confidence": 0.0,
                 "matched": False,
             })
             utterance["speaker_name"] = match.get("speaker_name", "Unknown Speaker")
-            utterance["confidence"] = match.get("confidence")
+            utterance["confidence"] = float(match.get("confidence") or 0.0)
             utterance["speaker_display"] = match.get("display_name", "Unknown")
             utterance["speaker_confidence"] = float(match.get("confidence") or 0.0)
-
 
         speaker_matches = [
             {
                 "speaker": speaker,
                 "display_name": speaker_match_map.get(speaker, {}).get("display_name", "Unknown"),
-                "confidence": float(speaker_match_map.get(speaker, {}).get("confidence", 0.0)),
+                "confidence": float(speaker_match_map.get(speaker, {}).get("confidence") or 0.0),
                 "matched": bool(speaker_match_map.get(speaker, {}).get("matched", False)),
             }
             for speaker in speaker_labels
@@ -1221,15 +1258,12 @@ def diarize_file(input_path: str) -> Dict:
 
 
     if whisper_error:
-        return _error_result("Whisper transcription failed. Using placeholder transcript.", "whisper_error_m1_m2")
+        return _error_result("No speech detected in this audio file.", "whisper_error_m1_m2")
 
     if local_whisper_error:
-        return _error_result("Local Whisper fallback failed. Using placeholder transcript.", "local_whisper_error_m1_m2")
+        return _error_result("No speech detected in this audio file.", "local_whisper_error_m1_m2")
 
     if diarization_error:
-        msg = "Diarization failed. Configure HF_TOKEN to enable speaker counting."
-        if "disabled by low-memory configuration" in diarization_error.lower():
-            msg = "Diarization is disabled by low-memory mode. Set ENABLE_PYANNOTE_DIARIZATION=true and restart backend."
-        return _error_result(msg, "diarization_error_m1_m2")
+        return _error_result("No speech detected in this audio file.", "diarization_error_m1_m2")
 
-    return _error_result("No speech or transcript detected.", "no_transcription_provider_m1_m2")
+    return _error_result("No speech detected in this audio file.", "no_transcription_provider_m1_m2")

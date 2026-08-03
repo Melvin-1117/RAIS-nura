@@ -39,6 +39,17 @@ async def log_runtime_configuration() -> None:
     print("====================================\n")
 
 
+@app.get("/")
+async def root() -> dict:
+    return {
+        "status": "online",
+        "message": "RAIS — Real-Time Audio Intelligence System API",
+        "documentation": "/docs",
+        "health": "/health",
+        "version": "0.1.0",
+    }
+
+
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
