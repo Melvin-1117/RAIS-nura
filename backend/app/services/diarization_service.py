@@ -281,114 +281,17 @@ def _estimate_reverb_tail(envelope: torch.Tensor) -> float:
     return max(0.0, span / 16000.0)
 
 
-def _build_sound_events(background_path: str, duration_seconds: float) -> List[Dict]:
-    if duration_seconds <= 0:
-        return []
+def _build_sound_events(
+    background_path: str, duration_seconds: float, separation_status: str = "completed"
+) -> List[Dict]:
+    from app.services.sound_categorizer import categorize_background_stream
 
-    waveform, sr = torchaudio.load(background_path)
-    if waveform.size(0) > 1:
-        waveform = waveform.mean(dim=0, keepdim=True)
-
-    samples = waveform.squeeze(0)
-    frame_len = int(sr * 0.5)
-    hop = int(sr * 0.25)
-    if samples.numel() < frame_len:
-        frame_len = max(1, samples.numel())
-        hop = frame_len
-
-    rms_values: List[float] = []
-    frames: List[Tuple[int, int, torch.Tensor]] = []
-
-    for start in range(0, max(1, samples.numel() - frame_len + 1), max(1, hop)):
-        end = min(samples.numel(), start + frame_len)
-        frame = samples[start:end]
-        if frame.numel() < 16:
-            continue
-        rms = float(torch.sqrt(torch.mean(torch.square(frame))))
-        rms_values.append(rms)
-        frames.append((start, end, frame))
-
-    if not frames:
-        return []
-
-    baseline = max(1e-4, float(torch.tensor(rms_values).median()))
-    active_threshold = baseline * 1.2
-    events: List[Dict[str, Any]] = []
-    current: Optional[Dict[str, Any]] = None
-
-    for start, end, frame in frames:
-        rms = float(torch.sqrt(torch.mean(torch.square(frame))))
-        is_active = rms >= active_threshold
-
-        if is_active and current is None:
-            current = {"start_idx": start, "end_idx": end, "frames": [frame], "rms": [rms]}
-        elif is_active and current is not None:
-            current["end_idx"] = end
-            current["frames"].append(frame)
-            current["rms"].append(rms)
-        elif not is_active and current is not None:
-            events.append(current)
-            current = None
-
-    if current is not None:
-        events.append(current)
-
-    sound_events: List[Dict[str, Any]] = []
-    global_rms = max(1e-4, float(torch.sqrt(torch.mean(torch.square(samples)))))
-
-    for event in events:
-        merged = torch.cat(event["frames"])
-        duration = max(0.1, (event["end_idx"] - event["start_idx"]) / float(sr))
-        avg_rms = float(sum(event["rms"]) / max(1, len(event["rms"])))
-
-        spec = torch.fft.rfft(merged)
-        mag = torch.abs(spec)
-        if mag.numel() <= 1:
-            continue
-
-        freqs = torch.linspace(0, sr / 2, mag.numel())
-        centroid = float(torch.sum(freqs * mag) / (torch.sum(mag) + 1e-8))
-
-        signs = torch.sign(merged)
-        zcr = float(torch.mean((signs[1:] != signs[:-1]).float())) if merged.numel() > 2 else 0.0
-
-        low_band = mag[freqs < 700]
-        high_band = mag[freqs > 2500]
-        hf_rolloff = float(torch.sum(high_band) / (torch.sum(low_band) + torch.sum(high_band) + 1e-8))
-        envelope = torch.abs(merged)
-        reverb_tail = _estimate_reverb_tail(envelope)
-
-        label_info = _classify_sound_event(avg_rms, centroid, zcr, duration)
-
-        norm_energy = min(1.0, avg_rms / (global_rms + 1e-8))
-        distance_score = 0.55 * norm_energy + 0.25 * hf_rolloff - 0.2 * min(1.0, reverb_tail / 0.8)
-        distance = "Far"
-        if distance_score >= 0.55:
-            distance = "Near"
-        elif distance_score >= 0.3:
-            distance = "Mid"
-
-        intensity = "Low"
-        if norm_energy >= 0.85:
-            intensity = "High"
-        elif norm_energy >= 0.45:
-            intensity = "Medium"
-
-        confidence = min(0.98, max(0.45, 0.45 + norm_energy * 0.35 + abs(hf_rolloff - 0.25) * 0.2))
-
-        sound_events.append(
-            {
-                "start": round(event["start_idx"] / float(sr), 2),
-                "end": round(event["end_idx"] / float(sr), 2),
-                "label": label_info["label"],
-                "category": label_info["category"],
-                "distance": distance,
-                "intensity": intensity,
-                "confidence": round(confidence, 2),
-            }
-        )
-
-    return sound_events
+    result = categorize_background_stream(
+        background_audio_path=background_path,
+        separation_status=separation_status,
+        duration_seconds=duration_seconds,
+    )
+    return result.get("sound_events", [])
 
 
 def _transcribe_with_whisper(audio_path: str) -> Dict[str, Any]:
@@ -1479,6 +1382,7 @@ def diarize_file(input_path: str) -> Dict:
             "speaker_matches": speaker_matches,
             "utterances": utterances,
             "sounds": sound_events,
+            "sound_events": sound_events,
             "processing": {
                 "duration_seconds": processed_audio["duration_seconds"],
                 "source_sample_rate": processed_audio["source_sample_rate"],

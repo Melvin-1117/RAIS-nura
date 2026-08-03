@@ -376,71 +376,136 @@ export const ResultsScreen = ({
         {tab === 'Sounds' && (
           <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
             <View style={styles.tabContent}>
-              {ALL_CATEGORIES.map((cat) => {
-                const events = categorizedSounds.byCategory[cat];
-                if (!events || events.length === 0) return null;
-                return (
-                  <View key={cat} style={styles.soundCategory}>
-                    <View style={styles.soundCategoryHeader}>
-                      <Text style={{ fontSize: 16, color: categoryIconColors[cat] }}>
-                        {categoryIcons[cat] ?? '🔉'}
+              {/* Separation gating */}
+              {result?.processing?.separation_confirmed === false ? (
+                <View style={styles.soundCard}>
+                  <Text style={{ fontSize: 24, textAlign: 'center', marginBottom: 8 }}>⚠️</Text>
+                  <Text style={[styles.cardTitle, { textAlign: 'center' }]}>
+                    Background analysis unavailable for this recording
+                  </Text>
+                  <Text style={[styles.soundMeta, { textAlign: 'center', marginTop: 4 }]}>
+                    Sound separation was not completed or failed for this recording session.
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  {/* Empty state when zero sounds detected */}
+                  {(!result?.sounds || result.sounds.length === 0) && (
+                    <View style={styles.soundCard}>
+                      <Text style={{ fontSize: 24, textAlign: 'center', marginBottom: 8 }}>🔇</Text>
+                      <Text style={[styles.cardTitle, { textAlign: 'center' }]}>
+                        No background sounds detected
                       </Text>
-                      <Text style={styles.cardTitle}>{cat}</Text>
+                      <Text style={[styles.soundMeta, { textAlign: 'center', marginTop: 4 }]}>
+                        Audio stream is clean without distinct background events.
+                      </Text>
                     </View>
-                    {events.map((event, i) => {
-                      const intensity = Math.round(event.score * 100);
-                      const intensityLabel =
-                        intensity > 60 ? 'High' : intensity > 30 ? 'Medium' : 'Low';
-                      const intensityColor =
-                        intensity > 60
-                          ? colors.error
-                          : intensity > 30
-                          ? '#F59E0B'
-                          : colors.tertiary;
-                      return (
-                        <View key={`${cat}-${i}`} style={styles.soundCard}>
-                          <View style={styles.soundCardHeader}>
-                            <View style={styles.soundCardLeft}>
-                              <View
-                                style={[
-                                  styles.soundIconWrap,
-                                  { backgroundColor: `${categoryIconColors[cat]}10` },
-                                ]}
-                              >
-                                <Text style={{ fontSize: 16, color: categoryIconColors[cat] }}>
-                                  {categoryIcons[cat]}
-                                </Text>
-                              </View>
-                              <View>
-                                <Text style={styles.soundName}>{event.label}</Text>
-                                <Text style={styles.soundMeta}>
-                                  {event.startSec.toFixed(1)}s - {event.endSec.toFixed(1)}s
-                                </Text>
-                              </View>
-                            </View>
-                          </View>
-                          <View style={styles.intensitySection}>
-                            <View style={styles.intensityLabelRow}>
-                              <Text style={styles.intensityLabelText}>INTENSITY</Text>
-                              <Text style={[styles.intensityValueText, { color: intensityColor }]}>
-                                {intensityLabel} ({intensity}%)
-                              </Text>
-                            </View>
-                            <View style={styles.intensityTrack}>
-                              <View
-                                style={[
-                                  styles.intensityFill,
-                                  { width: `${intensity}%`, backgroundColor: intensityColor },
-                                ]}
-                              />
-                            </View>
-                          </View>
+                  )}
+
+                  {/* 5 Main Category Cards */}
+                  {ALL_CATEGORIES.map((cat) => {
+                    const events = categorizedSounds.byCategory[cat] ?? [];
+                    const hasEvents = events.length > 0;
+                    return (
+                      <View key={cat} style={styles.soundCategory}>
+                        <View style={styles.soundCategoryHeader}>
+                          <Text style={{ fontSize: 16, color: categoryIconColors[cat] }}>
+                            {categoryIcons[cat] ?? '🔉'}
+                          </Text>
+                          <Text style={styles.cardTitle}>{cat}</Text>
+                          <Text style={styles.soundMeta}>
+                            ({hasEvents ? events.length : '0 events checked'})
+                          </Text>
                         </View>
-                      );
-                    })}
-                  </View>
-                );
-              })}
+
+                        {!hasEvents ? (
+                          <View style={[styles.soundCard, { opacity: 0.7 }]}>
+                            <Text style={styles.soundMeta}>
+                              No {cat.toLowerCase()} sounds detected
+                            </Text>
+                          </View>
+                        ) : (
+                          events.map((event, i) => {
+                            const intensity = Math.round(event.score * 100);
+                            const intensityLabel =
+                              intensity > 60 ? 'High' : intensity > 30 ? 'Medium' : 'Low';
+                            const intensityColor =
+                              intensity > 60
+                                ? colors.error
+                                : intensity > 30
+                                ? '#F59E0B'
+                                : colors.tertiary;
+                            return (
+                              <View key={`${cat}-${i}`} style={styles.soundCard}>
+                                <View style={styles.soundCardHeader}>
+                                  <View style={styles.soundCardLeft}>
+                                    <View
+                                      style={[
+                                        styles.soundIconWrap,
+                                        { backgroundColor: `${categoryIconColors[cat]}10` },
+                                      ]}
+                                    >
+                                      <Text style={{ fontSize: 16, color: categoryIconColors[cat] }}>
+                                        {categoryIcons[cat]}
+                                      </Text>
+                                    </View>
+                                    <View>
+                                      <Text style={styles.soundName}>{event.label}</Text>
+                                      <Text style={styles.soundMeta}>
+                                        {event.startSec.toFixed(1)}s - {event.endSec.toFixed(1)}s
+                                      </Text>
+                                    </View>
+                                  </View>
+                                </View>
+                                <View style={styles.intensitySection}>
+                                  <View style={styles.intensityLabelRow}>
+                                    <Text style={styles.intensityLabelText}>INTENSITY</Text>
+                                    <Text style={[styles.intensityValueText, { color: intensityColor }]}>
+                                      {intensityLabel} ({intensity}%)
+                                    </Text>
+                                  </View>
+                                  <View style={styles.intensityTrack}>
+                                    <View
+                                      style={[
+                                        styles.intensityFill,
+                                        { width: `${intensity}%`, backgroundColor: intensityColor },
+                                      ]}
+                                    />
+                                  </View>
+                                </View>
+                              </View>
+                            );
+                          })
+                        )}
+                      </View>
+                    );
+                  })}
+
+                  {/* Unknown Sounds Section */}
+                  {result?.sounds?.some(
+                    (s) => s.label === 'Unknown Sound' || s.category === 'Unclassified' || !s.category
+                  ) && (
+                    <View style={styles.soundCategory}>
+                      <View style={styles.soundCategoryHeader}>
+                        <Text style={{ fontSize: 16 }}>❓</Text>
+                        <Text style={styles.cardTitle}>Unknown Sounds</Text>
+                      </View>
+                      {result.sounds
+                        .filter(
+                          (s) => s.label === 'Unknown Sound' || s.category === 'Unclassified' || !s.category
+                        )
+                        .map((event, i) => (
+                          <View key={`unknown-${i}`} style={styles.soundCard}>
+                            <Text style={styles.soundName}>Unknown Sound</Text>
+                            <Text style={styles.soundMeta}>
+                              {event.start.toFixed(1)}s - {event.end.toFixed(1)}s (Confidence &lt; 40%)
+                            </Text>
+                          </View>
+                        ))}
+                    </View>
+                  )}
+                </>
+              )}
             </View>
           </ScrollView>
         )}

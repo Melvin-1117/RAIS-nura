@@ -27,9 +27,9 @@ class SoundEventOut(BaseModel):
     start: float
     end: float
     label: str
-    category: str
-    distance: str
-    intensity: str
+    category: Optional[str] = None
+    distance: Optional[str] = "Mid"
+    intensity: Optional[str] = "Medium"
     confidence: float
 
 
@@ -58,7 +58,8 @@ class DiarizationResponse(BaseModel):
     speaker_labels: List[str]
     speaker_matches: List[SpeakerMatchOut] = []
     utterances: List[UtteranceOut]
-    sounds: List[SoundEventOut]
+    sounds: List[SoundEventOut] = Field(default_factory=list)
+    sound_events: List[SoundEventOut] = Field(default_factory=list)
     processing: ProcessingMetaOut
 
 
