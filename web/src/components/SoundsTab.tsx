@@ -14,6 +14,27 @@ const CATEGORY_CONFIG: Record<
   Animal: { icon: "🐾", color: "#4edea3" },
 };
 
+const DISTANCE_CONFIG: Record<
+  string,
+  { label: string; badgeClass: string; icon: string }
+> = {
+  Near: {
+    label: "Near (<1m)",
+    badgeClass: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+    icon: "🎯",
+  },
+  Mid: {
+    label: "Mid (1–5m)",
+    badgeClass: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    icon: "📍",
+  },
+  Far: {
+    label: "Far (>5m)",
+    badgeClass: "bg-purple-500/15 text-purple-300 border-purple-500/30",
+    icon: "📡",
+  },
+};
+
 const ALL_CATEGORIES = [
   "Natural",
   "Artificial",
@@ -32,7 +53,6 @@ export default function SoundsTab({ result }: { result: DemoResult }) {
   });
 
   // FRONTEND REQUIREMENT 4: Respect separation-gating behavior from M4
-  // If separation was not confirmed or failed, show notice instead of broken list
   const separationConfirmed = result?.processing?.separation_confirmed ?? true;
   if (!separationConfirmed) {
     return (
@@ -50,7 +70,7 @@ export default function SoundsTab({ result }: { result: DemoResult }) {
 
   const allEvents = result?.sounds ?? [];
 
-  // FRONTEND REQUIREMENT 3: "Unknown Sound" / unclassified events in a separate section below 5 cards
+  // "Unknown Sound" / unclassified events in separate section
   const unclassifiedEvents = allEvents.filter(
     (s) => s.label === "Unknown Sound" || s.category === "Unclassified" || !s.category
   );
@@ -84,7 +104,7 @@ export default function SoundsTab({ result }: { result: DemoResult }) {
         </div>
       )}
 
-      {/* FRONTEND REQUIREMENT 2: 5 Category cards (showing zero-event cards in collapsed/empty state) */}
+      {/* 5 Category Cards */}
       <div className="space-y-4">
         {ALL_CATEGORIES.map((cat) => {
           const events = byCategory[cat] ?? [];
@@ -147,6 +167,9 @@ export default function SoundsTab({ result }: { result: DemoResult }) {
                           ? "#F59E0B"
                           : "#4edea3";
 
+                    const distTier = event.distance || "Mid";
+                    const distInfo = DISTANCE_CONFIG[distTier] ?? DISTANCE_CONFIG["Mid"];
+
                     return (
                       <div
                         key={`${cat}-${i}`}
@@ -154,10 +177,26 @@ export default function SoundsTab({ result }: { result: DemoResult }) {
                       >
                         <div className="flex items-start justify-between mb-2">
                           <div>
-                            <p className="text-sm font-medium text-white capitalize">
-                              {event.label}
-                            </p>
-                            <p className="text-[11px] text-[var(--color-on-surface-variant)]">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-medium text-white capitalize">
+                                {event.label}
+                              </p>
+
+                              {/* M6 FRONTEND REQUIREMENT: Distance badge with distinct visual treatment */}
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${distInfo.badgeClass} flex items-center gap-1`}
+                                title={
+                                  event.distance_score !== undefined
+                                    ? `Spatial Distance Score: ${event.distance_score}`
+                                    : undefined
+                                }
+                              >
+                                <span>{distInfo.icon}</span>
+                                {distInfo.label}
+                              </span>
+                            </div>
+
+                            <p className="text-[11px] text-[var(--color-on-surface-variant)] mt-0.5">
                               {event.start.toFixed(1)}s - {event.end.toFixed(1)}s
                             </p>
                           </div>
@@ -166,11 +205,6 @@ export default function SoundsTab({ result }: { result: DemoResult }) {
                             <span className="text-[10px] font-bold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded-full border border-[var(--color-primary)]/20">
                               {Math.round((event.confidence ?? 0) * 100)}% conf
                             </span>
-                            {event.distance && (
-                              <span className="text-[10px] font-bold text-[var(--color-on-surface-variant)] bg-white/5 px-2 py-0.5 rounded-full">
-                                📍 {event.distance}
-                              </span>
-                            )}
                           </div>
                         </div>
 
@@ -207,7 +241,7 @@ export default function SoundsTab({ result }: { result: DemoResult }) {
         })}
       </div>
 
-      {/* FRONTEND REQUIREMENT 3: "Unknown Sound" / Unclassified events in separate section below category cards */}
+      {/* "Unknown Sound" / Unclassified events in separate section */}
       {unclassifiedEvents.length > 0 && (
         <div className="glass-panel p-5 animate-fade-in-up border-l-4 border-gray-500">
           <div className="flex items-center justify-between mb-3">
@@ -225,22 +259,32 @@ export default function SoundsTab({ result }: { result: DemoResult }) {
           </p>
 
           <div className="space-y-3">
-            {unclassifiedEvents.map((event, i) => (
-              <div
-                key={`unknown-${i}`}
-                className="bg-white/5 rounded-xl p-3 border border-white/5 flex items-center justify-between"
-              >
-                <div>
-                  <p className="text-sm font-medium text-gray-300">Unknown Sound</p>
-                  <p className="text-[11px] text-[var(--color-on-surface-variant)]">
-                    {event.start.toFixed(1)}s - {event.end.toFixed(1)}s
-                  </p>
+            {unclassifiedEvents.map((event, i) => {
+              const distTier = event.distance || "Mid";
+              const distInfo = DISTANCE_CONFIG[distTier] ?? DISTANCE_CONFIG["Mid"];
+
+              return (
+                <div
+                  key={`unknown-${i}`}
+                  className="bg-white/5 rounded-xl p-3 border border-white/5 flex items-center justify-between"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-gray-300">Unknown Sound</p>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${distInfo.badgeClass}`}>
+                        {distInfo.icon} {distInfo.label}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[var(--color-on-surface-variant)] mt-0.5">
+                      {event.start.toFixed(1)}s - {event.end.toFixed(1)}s
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold text-gray-400 bg-white/5 px-2 py-1 rounded-full">
+                    {Math.round((event.confidence ?? 0) * 100)}% conf (&lt;40% threshold)
+                  </span>
                 </div>
-                <span className="text-[10px] font-bold text-gray-400 bg-white/5 px-2 py-1 rounded-full">
-                  {Math.round((event.confidence ?? 0) * 100)}% conf (&lt;40% threshold)
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

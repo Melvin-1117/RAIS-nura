@@ -450,7 +450,48 @@ export const ResultsScreen = ({
                                       </Text>
                                     </View>
                                     <View>
-                                      <Text style={styles.soundName}>{event.label}</Text>
+                                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                        <Text style={styles.soundName}>{event.label}</Text>
+                                        <View
+                                          style={{
+                                            backgroundColor:
+                                              event.distance === 'Near'
+                                                ? 'rgba(78, 222, 163, 0.15)'
+                                                : event.distance === 'Far'
+                                                ? 'rgba(167, 139, 250, 0.15)'
+                                                : 'rgba(245, 158, 11, 0.15)',
+                                            borderColor:
+                                              event.distance === 'Near'
+                                                ? 'rgba(78, 222, 163, 0.3)'
+                                                : event.distance === 'Far'
+                                                ? 'rgba(167, 139, 250, 0.3)'
+                                                : 'rgba(245, 158, 11, 0.3)',
+                                            borderWidth: 1,
+                                            borderRadius: 10,
+                                            paddingHorizontal: 6,
+                                            paddingVertical: 1,
+                                          }}
+                                        >
+                                          <Text
+                                            style={{
+                                              fontSize: 9,
+                                              fontWeight: '700',
+                                              color:
+                                                event.distance === 'Near'
+                                                  ? '#4edea3'
+                                                  : event.distance === 'Far'
+                                                  ? '#a78bfa'
+                                                  : '#F59E0B',
+                                            }}
+                                          >
+                                            {event.distance === 'Near'
+                                              ? '🎯 Near (<1m)'
+                                              : event.distance === 'Far'
+                                              ? '📡 Far (>5m)'
+                                              : '📍 Mid (1–5m)'}
+                                          </Text>
+                                        </View>
+                                      </View>
                                       <Text style={styles.soundMeta}>
                                         {event.startSec.toFixed(1)}s - {event.endSec.toFixed(1)}s
                                       </Text>

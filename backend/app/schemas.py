@@ -29,6 +29,7 @@ class SoundEventOut(BaseModel):
     label: str
     category: Optional[str] = None
     distance: Optional[str] = "Mid"
+    distance_score: Optional[float] = None
     intensity: Optional[str] = "Medium"
     confidence: float
 

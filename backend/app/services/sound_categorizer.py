@@ -265,15 +265,10 @@ def categorize_background_stream(
     # MERGING ADJACENT WINDOWS with same label
     merged_events = merge_adjacent_windows(raw_windows, max_gap_seconds=0.3)
 
-    # Add distance and intensity fields (additive for M6/M7 compatibility)
+    # Add distance and intensity fields (M6 distance estimation + M7 intensity baseline)
     formatted_events = []
     for ev in merged_events:
         rms_val = ev.pop("rms", overall_rms)
-
-        # Distance estimation baseline (M6 ready)
-        distance = "Near" if rms_val >= 0.12 else "Mid" if rms_val >= 0.04 else "Far"
-
-        # Intensity estimation baseline (M7 ready)
         intensity = "High" if rms_val >= 0.10 else "Medium" if rms_val >= 0.03 else "Low"
 
         formatted_events.append(
@@ -283,10 +278,19 @@ def categorize_background_stream(
                 "confidence": ev["confidence"],
                 "start": ev["start"],
                 "end": ev["end"],
-                "distance": distance,
                 "intensity": intensity,
             }
         )
+
+    # M6: Enrich with spatial distance estimates and distance_score using distance_estimator.py
+    try:
+        from app.services.distance_estimator import enrich_events_with_distance
+        formatted_events = enrich_events_with_distance(formatted_events, background_audio_path)
+    except Exception:
+        # Fallback default distance values
+        for ev in formatted_events:
+            ev["distance"] = ev.get("distance", "Mid")
+            ev["distance_score"] = ev.get("distance_score", 0.50)
 
     return {
         "sound_events": formatted_events,
