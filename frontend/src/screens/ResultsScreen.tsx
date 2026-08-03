@@ -500,16 +500,16 @@ export const ResultsScreen = ({
                                 </View>
                                 <View style={styles.intensitySection}>
                                   <View style={styles.intensityLabelRow}>
-                                    <Text style={styles.intensityLabelText}>INTENSITY</Text>
+                                    <Text style={styles.intensityLabelText}>LOUDNESS INTENSITY</Text>
                                     <Text style={[styles.intensityValueText, { color: intensityColor }]}>
-                                      {intensityLabel} ({intensity}%)
+                                      {event.intensity || (intensity > 70 ? 'High' : intensity >= 30 ? 'Medium' : 'Low')} ({event.intensity_pct !== undefined && event.intensity_pct !== null ? event.intensity_pct.toFixed(1) : intensity}%)
                                     </Text>
                                   </View>
                                   <View style={styles.intensityTrack}>
                                     <View
                                       style={[
                                         styles.intensityFill,
-                                        { width: `${intensity}%`, backgroundColor: intensityColor },
+                                        { width: `${Math.max(5, event.intensity_pct !== undefined && event.intensity_pct !== null ? event.intensity_pct : intensity)}%`, backgroundColor: intensityColor },
                                       ]}
                                     />
                                   </View>

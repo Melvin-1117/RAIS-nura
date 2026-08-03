@@ -292,6 +292,16 @@ def categorize_background_stream(
             ev["distance"] = ev.get("distance", "Mid")
             ev["distance_score"] = ev.get("distance_score", 0.50)
 
+    # M7: Enrich with relative loudness intensity and intensity_pct using intensity_analyzer.py
+    try:
+        from app.services.intensity_analyzer import enrich_events_with_intensity
+        formatted_events = enrich_events_with_intensity(formatted_events, background_audio_path)
+    except Exception:
+        # Fallback default intensity values
+        for ev in formatted_events:
+            ev["intensity"] = ev.get("intensity", "Medium")
+            ev["intensity_pct"] = ev.get("intensity_pct", 50.0)
+
     return {
         "sound_events": formatted_events,
         "separation_status": "completed",

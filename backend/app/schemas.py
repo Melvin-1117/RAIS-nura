@@ -31,6 +31,7 @@ class SoundEventOut(BaseModel):
     distance: Optional[str] = "Mid"
     distance_score: Optional[float] = None
     intensity: Optional[str] = "Medium"
+    intensity_pct: Optional[float] = None
     confidence: float
 
 

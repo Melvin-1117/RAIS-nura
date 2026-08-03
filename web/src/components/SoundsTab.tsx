@@ -52,7 +52,7 @@ export default function SoundsTab({ result }: { result: DemoResult }) {
     Animal: true,
   });
 
-  // FRONTEND REQUIREMENT 4: Respect separation-gating behavior from M4
+  // FRONTEND REQUIREMENT: Respect separation-gating behavior from M4
   const separationConfirmed = result?.processing?.separation_confirmed ?? true;
   if (!separationConfirmed) {
     return (
@@ -157,9 +157,16 @@ export default function SoundsTab({ result }: { result: DemoResult }) {
               {hasEvents && isExpanded && (
                 <div className="space-y-3 mt-3 pt-3 border-t border-white/10">
                   {events.map((event, i) => {
-                    const intensityPct = Math.round((event.confidence ?? 0.8) * 100);
+                    // M7: Perceived Loudness Intensity Percentage
+                    const intensityPct =
+                      event.intensity_pct !== undefined && event.intensity_pct !== null
+                        ? Math.round(event.intensity_pct * 10) / 10
+                        : Math.round((event.confidence ?? 0.8) * 100);
+
                     const intensityLabel =
-                      event.intensity || (intensityPct > 60 ? "High" : intensityPct > 30 ? "Medium" : "Low");
+                      event.intensity ||
+                      (intensityPct > 70.0 ? "High" : intensityPct >= 30.0 ? "Medium" : "Low");
+
                     const intensityColor =
                       intensityLabel === "High"
                         ? "#ffb4ab"
@@ -182,7 +189,7 @@ export default function SoundsTab({ result }: { result: DemoResult }) {
                                 {event.label}
                               </p>
 
-                              {/* M6 FRONTEND REQUIREMENT: Distance badge with distinct visual treatment */}
+                              {/* M6 Distance Badge */}
                               <span
                                 className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${distInfo.badgeClass} flex items-center gap-1`}
                                 title={
@@ -208,24 +215,25 @@ export default function SoundsTab({ result }: { result: DemoResult }) {
                           </div>
                         </div>
 
-                        {/* Intensity track */}
+                        {/* M7 FRONTEND REQUIREMENT: Static VU-meter style intensity bar with relative % */}
                         <div>
-                          <div className="flex justify-between mb-1">
+                          <div className="flex justify-between mb-1 items-center">
                             <span className="text-[9px] text-[var(--color-on-surface-variant)] font-bold uppercase tracking-wider">
-                              Intensity
+                              Loudness Intensity
                             </span>
                             <span
-                              className="text-[9px] font-bold"
+                              className="text-[9px] font-bold flex items-center gap-1"
                               style={{ color: intensityColor }}
                             >
-                              {intensityLabel} ({intensityPct}%)
+                              <span>🔊 {intensityLabel}</span>
+                              <span className="text-white/60">({intensityPct}%)</span>
                             </span>
                           </div>
-                          <div className="intensity-track h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div className="intensity-track h-2 bg-white/10 rounded-full overflow-hidden p-0.5 border border-white/5">
                             <div
-                              className="intensity-fill h-full rounded-full"
+                              className="intensity-fill h-full rounded-full transition-all duration-300"
                               style={{
-                                width: `${intensityPct}%`,
+                                width: `${Math.max(4, intensityPct)}%`,
                                 backgroundColor: intensityColor,
                               }}
                             />
