@@ -52,4 +52,12 @@ async def root() -> dict:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok"}
+    """
+    Health-check endpoint.
+    Returns status + the real ASR model name configured at runtime so the
+    mobile Settings screen can display the correct model label dynamically.
+    """
+    return {
+        "status": "ok",
+        "asr_model": settings.local_asr_model,
+    }

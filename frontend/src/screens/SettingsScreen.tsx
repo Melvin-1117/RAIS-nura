@@ -26,6 +26,10 @@ export const SettingsScreen = ({ initialSettings, onSave, onBack }: SettingsScre
   const [speakerThreshold, setSpeakerThreshold] = useState(initialSettings.speakerMatchThreshold);
   const [chunkSize, setChunkSize] = useState(initialSettings.chunkSizeSeconds);
   const [inputFocused, setInputFocused] = useState(false);
+  // Dynamic model label fetched from backend /health so it always reflects
+  // the real configured model (e.g. distil-whisper/distil-small.en) rather
+  // than a hardcoded string that drifts as the model changes.
+  const [asrModelLabel, setAsrModelLabel] = useState<string>('loading…');
 
   useEffect(() => {
     const load = async () => {
@@ -43,6 +47,28 @@ export const SettingsScreen = ({ initialSettings, onSave, onBack }: SettingsScre
       setChunkSize(parsed.chunkSizeSeconds ?? 2);
     };
     load();
+  }, []);
+
+  // Fetch the real ASR model name from the backend health endpoint.
+  // Falls back to the settings.py default if the backend is unreachable.
+  useEffect(() => {
+    const fetchModel = async () => {
+      try {
+        const res = await fetch(`${FIXED_API_BASE_URL}/health`, { signal: AbortSignal.timeout(3000) });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.asr_model) {
+            setAsrModelLabel(data.asr_model as string);
+            return;
+          }
+        }
+      } catch {
+        // Backend unreachable — fall back to known default from settings.py
+      }
+      // Fallback: show the actual configured default, not the old wrong label
+      setAsrModelLabel('distil-whisper/distil-small.en');
+    };
+    fetchModel();
   }, []);
 
   const save = async () => {
@@ -194,7 +220,7 @@ export const SettingsScreen = ({ initialSettings, onSave, onBack }: SettingsScre
             <View style={[styles.aboutRow, { borderBottomWidth: 0 }]}>
               <Text style={styles.aboutLabel}>Model</Text>
               <View style={styles.modelBadge}>
-                <Text style={styles.modelText}>distil-whisper</Text>
+                <Text style={styles.modelText}>{asrModelLabel}</Text>
                 <Text style={{ fontSize: 12, color: colors.primary }}>✓</Text>
               </View>
             </View>
