@@ -36,7 +36,7 @@ type SpeakerProfilesScreenProps = {
   onBack: () => void;
 };
 
-const MIN_RECORDING_SECONDS = 30;
+const MIN_RECORDING_SECONDS = 5;
 
 export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScreenProps) => {
   const [profiles, setProfiles] = useState<SpeakerProfile[]>([]);
@@ -177,12 +177,17 @@ export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScr
 
     setLoading(true);
     try {
+      const uriParts = recordedUri.split('.');
+      const ext = uriParts.length > 1 ? uriParts[uriParts.length - 1].toLowerCase() : 'wav';
+      const sampleName = `voice_sample.${ext}`;
+      const sampleMime = ext === 'm4a' ? 'audio/x-m4a' : ext === 'mp4' ? 'audio/mp4' : 'audio/wav';
+
       await registerSpeakerProfile(
         apiBaseUrl,
         newName.trim(),
         recordedUri,
-        'voice_sample.wav',
-        'audio/wav'
+        sampleName,
+        sampleMime
       );
       setNewName('');
       setRecordedUri(null);
@@ -191,7 +196,8 @@ export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScr
       await loadProfiles();
       Alert.alert('Success', 'Speaker enrolled successfully!');
     } catch (err: any) {
-      Alert.alert('Enrollment Failed', err?.response?.data?.detail || err?.message || 'Failed to register speaker');
+      const msg = err?.response?.data?.detail || err?.message || 'Failed to register speaker';
+      Alert.alert('Enrollment Failed', msg);
     } finally {
       setLoading(false);
     }
@@ -277,7 +283,7 @@ export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScr
             </View>
             <Text style={styles.emptyTitle}>No speakers registered yet</Text>
             <Text style={styles.emptySubtitle}>
-              Pre-register known speakers with a 30-second voice sample for offline speaker identification.
+              Pre-register known speakers with a 5-second voice sample for offline speaker identification.
             </Text>
             <Pressable
               onPress={() => {
@@ -404,7 +410,7 @@ export const SpeakerProfilesScreen = ({ apiBaseUrl, onBack }: SpeakerProfilesScr
                       : 'Target duration reached! Tap stop when finished.'
                     : recordedUri
                     ? 'Sample recorded! Tap Enroll to register.'
-                    : 'Tap microphone and record a voice sample for at least 30 seconds.'}
+                    : 'Tap microphone and record a voice sample for at least 5 seconds.'}
                 </Text>
               </View>
             </View>

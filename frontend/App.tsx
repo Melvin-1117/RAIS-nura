@@ -1,5 +1,5 @@
 import React from 'react';
-import { SafeAreaView, StatusBar, StyleSheet } from 'react-native';
+import { Platform, StatusBar, StyleSheet, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -22,29 +22,19 @@ export default function App() {
     const loadSettings = async () => {
       try {
         const raw = await AsyncStorage.getItem(storageKeys.appSettings);
-        if (!raw) {
-          return;
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          setSettings((prev) => ({ ...prev, ...parsed }));
         }
-
-        const parsed = JSON.parse(raw);
-        if (
-          typeof parsed?.apiBaseUrl === 'string' &&
-          typeof parsed?.speakerMatchThreshold === 'number' &&
-          typeof parsed?.chunkSizeSeconds === 'number'
-        ) {
-          setSettings(parsed);
-        }
-      } catch {
-        // Ignore malformed settings and continue with defaults.
+      } catch (err) {
+        console.warn('Failed to load settings:', err);
       }
     };
-
     loadSettings();
   }, []);
 
   const startProcessing = (audio: PickedAudio) => {
     setSelectedAudio(audio);
-    setResult(null);
     setScreen('processing');
   };
 
@@ -54,7 +44,7 @@ export default function App() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="#09090B" />
       {screen === 'home' && (
         <HomeScreen
@@ -64,7 +54,9 @@ export default function App() {
           onOpenSettings={() => setScreen('settings')}
         />
       )}
-      {screen === 'live' && <LiveDashboardScreen onBack={() => setScreen('home')} />}
+      {screen === 'live' && (
+        <LiveDashboardScreen apiBaseUrl={settings.apiBaseUrl} onBack={() => setScreen('home')} />
+      )}
       {screen === 'processing' && selectedAudio && (
         <ProcessingScreen
           audio={selectedAudio}
@@ -97,7 +89,7 @@ export default function App() {
           onBack={() => setScreen('home')}
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 

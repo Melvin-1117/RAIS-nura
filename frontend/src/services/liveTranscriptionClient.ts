@@ -1,23 +1,19 @@
-import Constants from 'expo-constants';
+import { getDefaultApiBaseUrl } from '../utils/network';
 
-import {
-  FinalTranscriptMessage,
-  LiveTranscriptMessage,
-  PartialTranscriptMessage,
-  TranscriptEntry,
-} from '../types/transcript';
-
-const getBackendUrl = (): string => {
+const getBackendUrl = (apiBaseUrl?: string): string => {
+  if (apiBaseUrl && apiBaseUrl.trim().length > 0) {
+    return apiBaseUrl.replace(/\/$/, '');
+  }
   const extra = Constants.expoConfig?.extra as Record<string, string> | undefined;
   const url =
     extra?.BACKEND_URL ||
     process.env.EXPO_PUBLIC_BACKEND_URL ||
-    'http://localhost:8000';
+    getDefaultApiBaseUrl();
   return url.replace(/\/$/, '');
 };
 
-const getBackendWsUrl = (): string => {
-  const httpUrl = getBackendUrl();
+const getBackendWsUrl = (apiBaseUrl?: string): string => {
+  const httpUrl = getBackendUrl(apiBaseUrl);
   const wsUrl = httpUrl.replace(/^http/, 'ws');
   return `${wsUrl}/api/live/ws`;
 };
@@ -149,13 +145,15 @@ export class LocalLiveTranscriptionClient {
   private isIntentionallyClosed = false;
   private reconnectAttempt = 0;
   private maxReconnectAttempts = 5;
+  private apiBaseUrl?: string;
 
-  constructor(callbacks: LiveCallbacks) {
+  constructor(callbacks: LiveCallbacks, apiBaseUrl?: string) {
     this.callbacks = callbacks;
+    this.apiBaseUrl = apiBaseUrl;
   }
 
   connect() {
-    const url = getBackendWsUrl();
+    const url = getBackendWsUrl(this.apiBaseUrl);
     this.isIntentionallyClosed = false;
     this.callbacks.onStateChange?.(this.reconnectAttempt > 0 ? 'reconnecting' : 'connecting');
 

@@ -44,8 +44,56 @@ def _l2_normalize(vec: torch.Tensor) -> torch.Tensor:
     return vec / norm
 
 
+import subprocess
+
+
+def load_audio_file(audio_path: str) -> Tuple[torch.Tensor, int]:
+    """
+    Robust audio loader supporting WAV, M4A, AAC, MP3, MP4, FLAC, OGG.
+    Tries torchaudio.load first; falls back to direct ffmpeg subprocess conversion for mobile M4A/AAC files.
+    """
+    try:
+        waveform, sample_rate = torchaudio.load(audio_path)
+        return waveform, sample_rate
+    except Exception as e:
+        print(f"[load_audio_file] torchaudio.load failed for {audio_path}: {e}. Attempting ffmpeg fallback...")
+        try:
+            import imageio_ffmpeg
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+
+            converted_path = str(audio_path) + "_converted.wav"
+            cmd = [
+                ffmpeg_exe,
+                "-y",
+                "-i",
+                str(audio_path),
+                "-ar",
+                str(settings.target_sample_rate),
+                "-ac",
+                "1",
+                "-f",
+                "wav",
+                converted_path,
+            ]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if res.returncode != 0:
+                print(f"[load_audio_file] ffmpeg stderr: {res.stderr.decode('utf-8', errors='ignore')}")
+                raise RuntimeError(f"FFmpeg conversion failed: {res.stderr.decode('utf-8', errors='ignore')}")
+
+            waveform, sample_rate = torchaudio.load(converted_path)
+            try:
+                if os.path.exists(converted_path):
+                    os.remove(converted_path)
+            except OSError:
+                pass
+            return waveform, sample_rate
+        except Exception as exc:
+            print(f"[load_audio_file] FFmpeg fallback failed for {audio_path}: {exc}")
+            raise RuntimeError(f"Could not load or decode audio format of '{audio_path}': {exc}") from exc
+
+
 def extract_embedding(audio_path: str) -> Tuple[List[float], float]:
-    waveform, sample_rate = torchaudio.load(audio_path)
+    waveform, sample_rate = load_audio_file(audio_path)
     if waveform.size(0) > 1:
         waveform = waveform.mean(dim=0, keepdim=True)
 
@@ -69,7 +117,7 @@ def extract_embedding(audio_path: str) -> Tuple[List[float], float]:
     return feature.tolist(), round(duration_seconds, 2)
 
 
-def register_profile(name: str, audio_path: str, min_duration_seconds: float = 30.0) -> Dict[str, Any]:
+def register_profile(name: str, audio_path: str, min_duration_seconds: float = 5.0) -> Dict[str, Any]:
     embedding, duration_seconds = extract_embedding(audio_path)
     if duration_seconds < min_duration_seconds:
         raise ValueError(
@@ -215,7 +263,7 @@ def match_speakers(
             for speaker in all_speakers
         }
 
-    waveform, sample_rate = torchaudio.load(audio_path)
+    waveform, sample_rate = load_audio_file(audio_path)
     if waveform.size(0) > 1:
         waveform = waveform.mean(dim=0, keepdim=True)
 

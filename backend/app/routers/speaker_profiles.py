@@ -30,9 +30,10 @@ async def create_speaker_profile(
         raise HTTPException(status_code=400, detail="Speaker name is required")
 
     suffix = Path(file.filename or "sample.wav").suffix or ".wav"
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        src_path = os.path.join(tmp_dir, f"sample{suffix}")
+    tmp_dir = tempfile.mkdtemp()
+    src_path = os.path.join(tmp_dir, f"sample{suffix}")
 
+    try:
         with open(src_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
@@ -42,12 +43,19 @@ async def create_speaker_profile(
         try:
             created = register_profile(name=name, audio_path=src_path)
         except ValueError as exc:
+            print(f"[Register Profile Validation Error] {exc}")
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
+            import traceback
+            print(f"[Register Profile Error]\n{traceback.format_exc()}")
             raise HTTPException(status_code=500, detail=f"Profile registration failed: {exc}") from exc
 
-
-    return SpeakerProfileOut(**created)
+        return SpeakerProfileOut(**created)
+    finally:
+        try:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
 
 
 @router.delete("/speaker-profiles/{profile_id}")

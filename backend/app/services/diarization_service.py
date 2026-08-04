@@ -24,6 +24,8 @@ huggingface_hub.hf_hub_download = _patched_hf_hub_download
 
 from pyannote.audio import Pipeline
 
+from app.services.speaker_profiles_service import load_audio_file
+
 from app.settings import settings
 from app.services.speaker_profiles_service import match_speakers
 
@@ -178,7 +180,7 @@ def _get_pipeline() -> Pipeline:
 
 
 def _preprocess_audio_to_wav_16k_mono(input_path: str) -> Dict:
-    waveform, sample_rate = torchaudio.load(input_path)
+    waveform, sample_rate = load_audio_file(input_path)
 
     # Convert to mono by averaging channels when needed.
     if waveform.size(0) > 1:
@@ -432,7 +434,7 @@ def _get_local_asr_pipeline():
 def _transcribe_with_local_whisper(audio_path: str, duration_seconds: float) -> List[Dict[str, Any]]:
     asr = _get_local_asr_pipeline()
     with torch.inference_mode():
-        waveform, sample_rate = torchaudio.load(audio_path)
+        waveform, sample_rate = load_audio_file(audio_path)
         if waveform.size(0) > 1:
             waveform = waveform.mean(dim=0, keepdim=True)
 
@@ -444,6 +446,10 @@ def _transcribe_with_local_whisper(audio_path: str, duration_seconds: float) -> 
         generate_kwargs: Dict[str, Any] = {
             "task": "transcribe",
             "num_beams": max(1, int(settings.local_asr_num_beams)),
+            "temperature": 0.0,
+            "no_speech_threshold": 0.6,
+            "logprob_threshold": -1.0,
+            "compression_ratio_threshold": 2.4,
         }
         if settings.local_asr_language:
             generate_kwargs["language"] = settings.local_asr_language
@@ -499,7 +505,7 @@ def _get_faster_whisper_model():
     if _faster_whisper_model is None:
         try:
             from faster_whisper import WhisperModel
-            _faster_whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+            _faster_whisper_model = WhisperModel("medium", device="cpu", compute_type="int8")
         except Exception as exc:
             print(f"[faster-whisper Init ERROR] {exc}")
             _faster_whisper_model = None
@@ -621,9 +627,10 @@ def _transcribe_speaker_segments_faster_whisper(
             torchaudio.save(slice_path, slice_waveform, sr)
             whisper_segments, _ = model.transcribe(
                 slice_path,
-                beam_size=3,
+                beam_size=5,
                 word_timestamps=False,
-                vad_filter=False,  # Retain short speech slices (<0.5s)
+                vad_filter=True,
+                language="en",
             )
             text_chunks = [s.text.strip() for s in whisper_segments if s.text and s.text.strip()]
             text = " ".join(text_chunks).strip()

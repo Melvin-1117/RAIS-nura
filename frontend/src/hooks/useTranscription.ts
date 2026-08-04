@@ -73,7 +73,7 @@ const recordingOptions: RecordingOptions = {
   },
 };
 
-export const useTranscription = () => {
+export const useTranscription = (apiBaseUrl?: string) => {
   const {
     transcript,
     isLoading,
@@ -178,15 +178,18 @@ export const useTranscription = () => {
         playsInSilentMode: true,
       });
 
-      const client = new LocalLiveTranscriptionClient({
-        onPartial: (entry: TranscriptEntry) => addOrUpdate(entry),
-        onFinal: (entry: TranscriptEntry) => addOrUpdate(entry),
-        onPayload: (payload: LivePayload) => setLatestPayload(payload),
-        onStateChange: (state: ConnectionState) => setConnectionState(state),
-        onError: (message: string) => setError(message),
-        onOpen: () => setLive(true),
-        onClose: () => setLive(false),
-      });
+      const client = new LocalLiveTranscriptionClient(
+        {
+          onPartial: (entry: TranscriptEntry) => addOrUpdate(entry),
+          onFinal: (entry: TranscriptEntry) => addOrUpdate(entry),
+          onPayload: (payload: LivePayload) => setLatestPayload(payload),
+          onStateChange: (state: ConnectionState) => setConnectionState(state),
+          onError: (message: string) => setError(message),
+          onOpen: () => setLive(true),
+          onClose: () => setLive(false),
+        },
+        apiBaseUrl
+      );
 
       liveClientRef.current = client;
       client.connect();

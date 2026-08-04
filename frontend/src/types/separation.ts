@@ -3,16 +3,16 @@ import { SoundEvent } from './diarization';
 export type SeparationJobStatus = 'queued' | 'running' | 'completed' | 'failed';
 
 export type SeparationProcessingMeta = {
-  duration_seconds: number;
-  source_sample_rate: number;
-  output_sample_rate: number;
+  duration_seconds?: number;
+  source_sample_rate?: number;
+  output_sample_rate?: number;
   speech_energy_ratio: number;
   background_energy_ratio: number;
 };
 
 export type SeparationResult = {
-  vocals_url: string;
-  background_url: string;
+  vocals_url: string | null;
+  background_url: string | null;
   sounds: SoundEvent[];
   processing: SeparationProcessingMeta;
 };

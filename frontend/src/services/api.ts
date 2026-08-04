@@ -3,39 +3,47 @@ import { Platform } from 'react-native';
 
 import { DiarizationResponse } from '../types/diarization';
 import { SpeakerProfile } from '../types/profiles';
+import { getDefaultApiBaseUrl, parseUrl } from '../utils/network';
 
 const LOCALHOST_PREFERRED_PORTS = ['8000', '8003', '8002', '8001'];
 const LAN_PREFERRED_PORTS = ['8000', '8003', '8002', '8001'];
-const LEGACY_API_PORTS = new Set(['', '8000', '8001', '8002', '8003']);
 
 const hostCandidates = (apiBaseUrl: string): string[] => {
+  const candidates: string[] = [];
+
+  // 1. The stored/saved API URL is always the highest-priority candidate.
+  if (apiBaseUrl && apiBaseUrl.startsWith('http')) {
+    candidates.push(apiBaseUrl);
+  }
+
+  // 2. Auto-detect from Metro bundler host (works when --host lan is used).
+  const defaultUrl = getDefaultApiBaseUrl();
+  if (defaultUrl && !candidates.includes(defaultUrl)) {
+    candidates.push(defaultUrl);
+  }
+
+  // 3. Try alternate ports on the same host as the stored URL.
   try {
-    const parsed = new URL(apiBaseUrl);
+    const parsed = parseUrl(apiBaseUrl);
     const isLocalHost = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
-
-    if (!LEGACY_API_PORTS.has(parsed.port)) {
-      return [apiBaseUrl];
-    }
-
     const ports = isLocalHost ? LOCALHOST_PREFERRED_PORTS : LAN_PREFERRED_PORTS;
 
-    const candidates = [apiBaseUrl];
     for (const port of ports) {
       const candidate = `${parsed.protocol}//${parsed.hostname}:${port}`;
       if (!candidates.includes(candidate)) {
         candidates.push(candidate);
       }
     }
-
-    return candidates;
   } catch {
-    return [apiBaseUrl];
+    // Ignore URL parse error
   }
+
+  return candidates;
 };
 
 const isHealthy = async (apiBaseUrl: string): Promise<boolean> => {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const timeout = setTimeout(() => controller.abort(), 4000);
 
   try {
     const response = await fetch(`${apiBaseUrl}/health`, {
@@ -74,7 +82,7 @@ export const diarizeAudioFile = async (
   fileName: string,
   mimeType: string,
   apiBaseUrl: string
-) => {
+): Promise<DiarizationResponse> => {
   const reachableApiBaseUrl = await resolveReachableApiBaseUrl(apiBaseUrl);
 
   const formData = new FormData();
@@ -88,30 +96,35 @@ export const diarizeAudioFile = async (
     formData.append('file', webFile);
   } else {
     formData.append('file', {
-      // React Native file object for multipart upload.
       uri: fileUri,
-      name: fileName,
-      type: mimeType,
+      name: fileName || 'sample.wav',
+      type: mimeType || 'audio/wav',
     } as any);
   }
 
-  const api = axios.create({
-    baseURL: reachableApiBaseUrl,
-    // Backend can take several minutes when polling cloud transcription.
-    timeout: 420000,
-  });
-
   try {
-    const response = await api.post<DiarizationResponse>('/api/diarize', formData);
-    return response.data;
-  } catch (error: any) {
-    if (!error?.response) {
-      throw new Error(
-        `Cannot connect to backend at ${reachableApiBaseUrl}. Verify the backend server is running.`
-      );
+    const response = await fetch(`${reachableApiBaseUrl}/api/diarize`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errJson = await response.json().catch(() => null);
+      const detail = errJson?.detail || (await response.text().catch(() => ''));
+      throw new Error(detail || `Diarization failed (${response.status})`);
     }
 
-    throw error;
+    return await response.json();
+  } catch (error: any) {
+    if (error?.message) {
+      throw error;
+    }
+    throw new Error(
+      `Cannot connect to backend at ${reachableApiBaseUrl}. Verify the backend server is running.`
+    );
   }
 };
 
@@ -143,14 +156,33 @@ export const registerSpeakerProfile = async (
   } else {
     formData.append('file', {
       uri: fileUri,
-      name: fileName,
-      type: mimeType,
+      name: fileName || 'sample.wav',
+      type: mimeType || 'audio/wav',
     } as any);
   }
 
-  const api = axios.create({ baseURL: reachableApiBaseUrl, timeout: 120000 });
-  const response = await api.post<SpeakerProfile>('/api/speaker-profiles', formData);
-  return response.data;
+  try {
+    const response = await fetch(`${reachableApiBaseUrl}/api/speaker-profiles`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errJson = await response.json().catch(() => null);
+      const detail = errJson?.detail || (await response.text().catch(() => ''));
+      throw new Error(detail || `Server error (${response.status})`);
+    }
+
+    return await response.json();
+  } catch (error: any) {
+    if (error?.message) {
+      throw error;
+    }
+    throw new Error(`Cannot connect to backend at ${reachableApiBaseUrl}. Verify network connection.`);
+  }
 };
 
 export const deleteSpeakerProfile = async (apiBaseUrl: string, profileId: string): Promise<void> => {

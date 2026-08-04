@@ -4,6 +4,22 @@ import { NativeModules, Platform } from 'react-native';
 const DEFAULT_API_PORT = '8000';
 const FALLBACK_API_BASE_URL = `http://10.0.2.2:${DEFAULT_API_PORT}`;
 
+export const parseUrl = (urlStr: string): { protocol: string; hostname: string; port: string } => {
+  try {
+    const match = urlStr.match(/^(https?:)\/\/([^/:]+)(?::(\d+))?/i);
+    if (match) {
+      return {
+        protocol: match[1] || 'http:',
+        hostname: match[2] || 'localhost',
+        port: match[3] || '',
+      };
+    }
+  } catch {
+    // fallback
+  }
+  return { protocol: 'http:', hostname: 'localhost', port: '' };
+};
+
 const extractHostFromScriptUrl = (): string | null => {
   const scriptURL = NativeModules?.SourceCode?.scriptURL as string | undefined;
   if (!scriptURL) {
@@ -11,7 +27,8 @@ const extractHostFromScriptUrl = (): string | null => {
   }
 
   try {
-    return new URL(scriptURL).hostname;
+    const match = scriptURL.match(/^https?:\/\/([^/:]+)/i);
+    return match ? match[1] : null;
   } catch {
     return null;
   }

@@ -6,7 +6,10 @@ import { WaveformPlaceholder } from '../components/WaveformPlaceholder';
 import { colors, radius, spacing, typography } from '../constants/theme';
 import { useTranscription } from '../hooks/useTranscription';
 
-type LiveDashboardScreenProps = { onBack: () => void };
+type LiveDashboardScreenProps = {
+  apiBaseUrl?: string;
+  onBack: () => void;
+};
 
 type LiveEntry = { speaker: string; text: string; at: string; color: string };
 
@@ -26,8 +29,8 @@ const categoryIcons: Record<string, string> = {
   Unclassified: '❓',
 };
 
-export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
-  const { transcript, connectionState, latestPayload, startLive, stopLive, error } = useTranscription();
+export const LiveDashboardScreen = ({ apiBaseUrl, onBack }: LiveDashboardScreenProps) => {
+  const { transcript, connectionState, latestPayload, startLive, stopLive, error } = useTranscription(apiBaseUrl);
   const [seconds, setSeconds] = useState(0);
 
   const pulseLive = useRef(new Animated.Value(1)).current;

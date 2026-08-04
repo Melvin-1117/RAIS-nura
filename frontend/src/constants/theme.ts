@@ -2,6 +2,7 @@
  * Nura Audio Intelligence — Design System
  * Derived from the Stitch-generated Material Design 3 palette.
  */
+import { Platform } from 'react-native';
 
 // ── Material Design 3 Named Colors (Dark Mode) ─────────────────────────────
 export const colors = {
@@ -101,17 +102,24 @@ export const gradients = {
   subtle: ['#18181C', '#111115'] as const,
 } as const;
 
+export const FONT_FAMILY = Platform.select({
+  ios: 'Instagram Sans',
+  android: 'sans-serif-medium',
+  web: "'Instagram Sans', 'InstagramSans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+  default: 'sans-serif',
+});
+
 // ── Typography Scale (from Stitch design system) ────────────────────────────
 export const typography = {
-  displayLg: { fontSize: 48, lineHeight: 56, fontWeight: '800' as const, letterSpacing: -0.96 },
-  headlineXl: { fontSize: 32, lineHeight: 40, fontWeight: '700' as const, letterSpacing: -0.32 },
-  headlineXlMobile: { fontSize: 28, lineHeight: 34, fontWeight: '700' as const },
-  headlineLg: { fontSize: 24, lineHeight: 32, fontWeight: '700' as const },
-  headlineMd: { fontSize: 20, lineHeight: 28, fontWeight: '600' as const },
-  bodyLg: { fontSize: 18, lineHeight: 28, fontWeight: '400' as const },
-  bodyMd: { fontSize: 16, lineHeight: 24, fontWeight: '400' as const },
-  bodySm: { fontSize: 14, lineHeight: 20, fontWeight: '400' as const },
-  labelMd: { fontSize: 12, lineHeight: 16, fontWeight: '600' as const, letterSpacing: 0.6 },
+  displayLg: { fontFamily: FONT_FAMILY, fontSize: 48, lineHeight: 56, fontWeight: '800' as const, letterSpacing: -0.96 },
+  headlineXl: { fontFamily: FONT_FAMILY, fontSize: 32, lineHeight: 40, fontWeight: '700' as const, letterSpacing: -0.32 },
+  headlineXlMobile: { fontFamily: FONT_FAMILY, fontSize: 28, lineHeight: 34, fontWeight: '700' as const },
+  headlineLg: { fontFamily: FONT_FAMILY, fontSize: 24, lineHeight: 32, fontWeight: '700' as const },
+  headlineMd: { fontFamily: FONT_FAMILY, fontSize: 20, lineHeight: 28, fontWeight: '600' as const },
+  bodyLg: { fontFamily: FONT_FAMILY, fontSize: 18, lineHeight: 28, fontWeight: '400' as const },
+  bodyMd: { fontFamily: FONT_FAMILY, fontSize: 16, lineHeight: 24, fontWeight: '400' as const },
+  bodySm: { fontFamily: FONT_FAMILY, fontSize: 14, lineHeight: 20, fontWeight: '400' as const },
+  labelMd: { fontFamily: FONT_FAMILY, fontSize: 12, lineHeight: 16, fontWeight: '600' as const, letterSpacing: 0.6 },
 } as const;
 
 // ── Spacing (4px grid) ──────────────────────────────────────────────────────

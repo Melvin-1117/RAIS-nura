@@ -1,3 +1,4 @@
+@import url('https://fonts.cdnfonts.com/css/instagram-sans');
 @import "tailwindcss";
 
 /* ── Design Tokens ──────────────────────────────────────────────────────── */
@@ -53,7 +54,7 @@ html {
 body {
   background-color: var(--color-background);
   color: var(--color-on-surface);
-  font-family: var(--font-plus-jakarta), 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  font-family: 'Instagram Sans', 'Instagram Sans Script', system-ui, -apple-system, sans-serif;
   line-height: 1.55;
   letter-spacing: -0.012em;
   -webkit-font-smoothing: antialiased;
