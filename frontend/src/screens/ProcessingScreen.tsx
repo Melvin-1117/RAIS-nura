@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { GlassPanel } from '../components/GlassPanel';
 import { TopAppBar } from '../components/TopAppBar';
@@ -18,18 +18,23 @@ type ProcessingScreenProps = {
   onComplete: (result: DiarizationResponse) => void;
 };
 
+// ── 5-stage pipeline (matches real backend processing order) ────────────────
 const milestones = [
-  { key: 'M4', label: 'Background Segregation' },
-  { key: 'M1', label: 'Speaker Count' },
-  { key: 'M2', label: 'Transcript' },
+  { key: 'M4', label: 'Sound Separation', icon: '🔊', status: 'Isolating speech from background…' },
+  { key: 'M1', label: 'Speaker Diarization', icon: '🎙️', status: 'Identifying speaker segments…' },
+  { key: 'M2', label: 'Transcription', icon: '📝', status: 'Converting speech to text…' },
+  { key: 'M3', label: 'Speaker Recognition', icon: '👤', status: 'Matching against enrolled profiles…' },
+  { key: 'M5', label: 'Sound Analysis', icon: '🔉', status: 'Classifying background sounds…' },
 ];
 
 export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: ProcessingScreenProps) => {
   const [progress, setProgress] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isRunning, setIsRunning] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const progressAnim = useRef(new Animated.Value(0)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
+  const fadeError = useRef(new Animated.Value(0)).current;
   const {
     status: separationStatus,
     progress: separationProgress,
@@ -48,7 +53,7 @@ export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: Proces
 
   useEffect(() => {
     if (separationStatus === 'queued' || separationStatus === 'running') {
-      const m4Progress = Math.max(4, Math.min(60, Math.round(separationProgress * 0.6)));
+      const m4Progress = Math.max(4, Math.min(18, Math.round(separationProgress * 0.18)));
       setActiveIndex(0);
       setProgress((prev) => Math.max(prev, m4Progress));
       Animated.timing(progressAnim, { toValue: m4Progress, duration: 250, useNativeDriver: false }).start();
@@ -57,8 +62,8 @@ export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: Proces
 
     if (separationStatus === 'completed') {
       setActiveIndex(1);
-      setProgress((prev) => Math.max(prev, 60));
-      Animated.timing(progressAnim, { toValue: 60, duration: 250, useNativeDriver: false }).start();
+      setProgress((prev) => Math.max(prev, 20));
+      Animated.timing(progressAnim, { toValue: 20, duration: 250, useNativeDriver: false }).start();
     }
   }, [progressAnim, separationProgress, separationStatus]);
 
@@ -79,14 +84,20 @@ export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: Proces
 
         if (!isMounted) return;
 
+        // Advance through stages 1–4 progressively during diarization
         setActiveIndex(1);
+        let stageCounter = 0;
         diarizationTimer = setInterval(() => {
+          stageCounter += 1;
           setProgress((prev) => {
-            const next = prev < 95 ? prev + 4 : prev;
+            const next = prev < 95 ? prev + 3 : prev;
             Animated.timing(progressAnim, { toValue: next, duration: 300, useNativeDriver: false }).start();
             return next;
           });
-          setActiveIndex((prev) => (prev < milestones.length - 1 ? prev + 1 : prev));
+          // Advance visible stage every ~3 ticks (1.5s)
+          if (stageCounter % 3 === 0) {
+            setActiveIndex((prev) => (prev < milestones.length - 1 ? prev + 1 : prev));
+          }
         }, 500);
 
         const diarizationInputUri =
@@ -124,6 +135,8 @@ export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: Proces
             }
           : result;
 
+        // Mark all stages done
+        setActiveIndex(milestones.length);
         setProgress(100);
         Animated.timing(progressAnim, { toValue: 100, duration: 300, useNativeDriver: false }).start();
         setTimeout(() => onComplete(mergedResult), 350);
@@ -136,7 +149,9 @@ export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: Proces
           typeof rawMessage === 'string' && rawMessage.toLowerCase().includes('timeout')
             ? 'Backend processing is taking longer than expected. Please retry with a shorter file or wait and run again.'
             : rawMessage;
-        Alert.alert('Processing failed', normalizedMessage);
+        setErrorMessage(normalizedMessage);
+        // Fade in the error card
+        Animated.timing(fadeError, { toValue: 1, duration: 400, useNativeDriver: Platform.OS !== 'web' }).start();
       }
     };
 
@@ -151,6 +166,7 @@ export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: Proces
     audio.uri,
     onComplete,
     progressAnim,
+    fadeError,
     resetSeparation,
     runSeparation,
     settings.apiBaseUrl,
@@ -159,10 +175,11 @@ export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: Proces
   const animatedWidth = progressAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] });
   const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
   const statusText = useMemo(() => {
-    if (activeIndex === 0) return separationStage || 'Separating background sounds...';
-    if (activeIndex === 1) return 'Counting speakers...';
-    return 'Generating transcript...';
-  }, [activeIndex, separationStage]);
+    if (errorMessage) return 'Processing failed';
+    if (activeIndex >= milestones.length) return 'Analysis complete!';
+    if (activeIndex === 0) return separationStage || milestones[0].status;
+    return milestones[activeIndex]?.status || 'Processing…';
+  }, [activeIndex, separationStage, errorMessage]);
 
   const speechEnergy = separationResult
     ? Math.round((separationResult.processing.speech_energy_ratio ?? 0.82) * 100)
@@ -182,30 +199,62 @@ export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: Proces
           <View style={styles.breathingWaveform}>
             <WaveformPlaceholder
               bars={[30, 50, 20, 60, 40, 70, 50, 30]}
-              color={colors.primary}
+              color={errorMessage ? colors.error : colors.primary}
             />
           </View>
-          <Text style={styles.heroTitle}>Analyzing Audio</Text>
-          <Text style={styles.heroSub}>{statusText}</Text>
+          <Text style={styles.heroTitle}>
+            {errorMessage ? 'Processing Failed' : 'Analyzing Audio'}
+          </Text>
+          <Text style={[styles.heroSub, errorMessage && { color: colors.error }]}>{statusText}</Text>
 
           {/* Progress Bar */}
           <View style={styles.progressContainer}>
             <View style={styles.progressTrack}>
-              <Animated.View style={[styles.progressFill, { width: animatedWidth }]} />
+              <Animated.View
+                style={[
+                  styles.progressFill,
+                  { width: animatedWidth },
+                  errorMessage && { backgroundColor: colors.error },
+                ]}
+              />
             </View>
             <View style={styles.progressMeta}>
-              <Text style={[styles.progressLabel, { color: colors.primary }]}>{progress}% Complete</Text>
-              <Text style={styles.progressLabel}>{isRunning ? `${Math.max(0, Math.round((100 - progress) * 0.6))}s remaining` : 'Failed'}</Text>
+              <Text style={[styles.progressLabel, { color: errorMessage ? colors.error : colors.primary }]}>
+                {errorMessage ? 'Error' : `${progress}% Complete`}
+              </Text>
+              <Text style={styles.progressLabel}>
+                {errorMessage
+                  ? ''
+                  : isRunning
+                  ? `${Math.max(0, Math.round((100 - progress) * 0.6))}s remaining`
+                  : 'Failed'}
+              </Text>
             </View>
           </View>
         </View>
+
+        {/* ── Inline Error Card (replaces Alert.alert) ──────── */}
+        {errorMessage && (
+          <Animated.View style={[styles.errorCard, { opacity: fadeError }]}>
+            <Text style={styles.errorIcon}>⚠️</Text>
+            <Text style={styles.errorTitle}>Something went wrong</Text>
+            <Text style={styles.errorBody}>{errorMessage}</Text>
+            <Pressable
+              onPress={onBack}
+              style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }]}
+            >
+              <Text style={styles.retryBtnText}>← Back to Home</Text>
+            </Pressable>
+          </Animated.View>
+        )}
 
         {/* ── Pipeline Steps ──────────────────────────────── */}
         <View style={styles.pipelineSection}>
           <Text style={styles.sectionLabel}>Pipeline Status</Text>
           {milestones.map((m, i) => {
             const isDone = i < activeIndex;
-            const isActive = i === activeIndex && isRunning;
+            const isActive = i === activeIndex && isRunning && !errorMessage;
+            const isFailed = i === activeIndex && !isRunning && !!errorMessage;
             const isPending = i > activeIndex;
 
             return (
@@ -213,14 +262,19 @@ export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: Proces
                 key={m.key}
                 style={[
                   styles.pipelineStep,
-                  isPending ? { opacity: 0.5 } : {},
+                  isPending ? { opacity: 0.4 } : {},
                   isActive ? { borderColor: 'rgba(192, 193, 255, 0.4)' } : {},
+                  isFailed ? { borderColor: 'rgba(255, 180, 171, 0.4)' } : {},
                 ]}
               >
                 <View style={styles.pipelineRow}>
                   {isDone ? (
                     <View style={styles.stepDone}>
                       <Text style={styles.stepDoneText}>✓</Text>
+                    </View>
+                  ) : isFailed ? (
+                    <View style={styles.stepFailed}>
+                      <Text style={styles.stepFailedText}>✕</Text>
                     </View>
                   ) : isActive ? (
                     <Animated.View style={[styles.stepSpinner, { transform: [{ rotate: spin }] }]} />
@@ -229,22 +283,29 @@ export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: Proces
                       <Text style={styles.stepPendingText}>⋯</Text>
                     </View>
                   )}
-                  <Text style={[
-                    styles.stepLabel,
-                    isDone && { color: colors.onSurface },
-                    isActive && { color: colors.primary, fontWeight: '600' },
-                    isPending && { color: colors.onSurfaceVariant },
-                  ]}>
-                    {m.label}
-                  </Text>
+                  <View style={{ gap: 2 }}>
+                    <Text style={[
+                      styles.stepLabel,
+                      isDone && { color: colors.onSurface },
+                      isActive && { color: colors.primary, fontWeight: '600' },
+                      isFailed && { color: colors.error, fontWeight: '600' },
+                      isPending && { color: colors.onSurfaceVariant },
+                    ]}>
+                      {m.icon} {m.label}
+                    </Text>
+                    {isActive && (
+                      <Text style={styles.stepSubtext}>{m.status}</Text>
+                    )}
+                  </View>
                 </View>
                 <Text style={[
                   styles.stepStatus,
                   isDone && { color: colors.tertiary },
                   isActive && { color: colors.primary },
+                  isFailed && { color: colors.error },
                   isPending && { color: colors.onSurfaceVariant },
                 ]}>
-                  {isDone ? 'DONE' : isActive ? 'RUNNING...' : 'PENDING'}
+                  {isDone ? 'DONE' : isFailed ? 'FAILED' : isActive ? 'RUNNING' : 'PENDING'}
                 </Text>
               </GlassPanel>
             );
@@ -281,15 +342,17 @@ export const ProcessingScreen = ({ audio, settings, onBack, onComplete }: Proces
       </ScrollView>
 
       {/* ── Cancel Button ─────────────────────────────────── */}
-      <View style={styles.bottomAction}>
-        <Pressable
-          onPress={onBack}
-          style={({ pressed }) => [styles.cancelBtn, pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }]}
-        >
-          <Text style={{ fontSize: 16 }}>❌</Text>
-          <Text style={styles.cancelText}>Cancel Processing</Text>
-        </Pressable>
-      </View>
+      {!errorMessage && (
+        <View style={styles.bottomAction}>
+          <Pressable
+            onPress={onBack}
+            style={({ pressed }) => [styles.cancelBtn, pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] }]}
+          >
+            <Text style={{ fontSize: 16 }}>❌</Text>
+            <Text style={styles.cancelText}>Cancel Processing</Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 };
@@ -320,6 +383,30 @@ const styles = StyleSheet.create({
   progressMeta: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
   progressLabel: { ...typography.labelMd, color: colors.onSurfaceVariant },
 
+  // Inline Error Card
+  errorCard: {
+    backgroundColor: 'rgba(147, 0, 10, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 180, 171, 0.25)',
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  errorIcon: { fontSize: 32 },
+  errorTitle: { ...typography.headlineMd, color: colors.error },
+  errorBody: { ...typography.bodySm, color: colors.onSurfaceVariant, textAlign: 'center', lineHeight: 20 },
+  retryBtn: {
+    marginTop: spacing.sm,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 180, 171, 0.3)',
+    backgroundColor: 'rgba(147, 0, 10, 0.15)',
+  },
+  retryBtnText: { ...typography.labelMd, color: colors.error, fontSize: 14 },
+
   // Pipeline
   pipelineSection: { gap: 8 },
   sectionLabel: {
@@ -348,6 +435,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   stepDoneText: { color: colors.tertiary, fontSize: 14, fontWeight: '600' },
+  stepFailed: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepFailedText: { color: colors.error, fontSize: 14, fontWeight: '700' },
   stepSpinner: {
     width: 32,
     height: 32,
@@ -368,6 +466,7 @@ const styles = StyleSheet.create({
   },
   stepPendingText: { color: colors.onSurfaceVariant, fontSize: 14 },
   stepLabel: { ...typography.bodyMd, color: colors.onSurface },
+  stepSubtext: { ...typography.labelMd, color: colors.onSurfaceVariant, fontSize: 10, fontWeight: '400' },
   stepStatus: { ...typography.labelMd, textTransform: 'uppercase' },
 
   // Separation Card

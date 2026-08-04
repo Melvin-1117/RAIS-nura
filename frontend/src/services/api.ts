@@ -4,9 +4,9 @@ import { Platform } from 'react-native';
 import { DiarizationResponse } from '../types/diarization';
 import { SpeakerProfile } from '../types/profiles';
 
-const LOCALHOST_PREFERRED_PORTS = ['8003', '8002', '8001'];
-const LAN_PREFERRED_PORTS = ['8003', '8002', '8001', '8000'];
-const LEGACY_API_PORTS = new Set(['', '8000', '8001', '8002']);
+const LOCALHOST_PREFERRED_PORTS = ['8000', '8003', '8002', '8001'];
+const LAN_PREFERRED_PORTS = ['8000', '8003', '8002', '8001'];
+const LEGACY_API_PORTS = new Set(['', '8000', '8001', '8002', '8003']);
 
 const hostCandidates = (apiBaseUrl: string): string[] => {
   try {

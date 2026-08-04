@@ -152,10 +152,47 @@ export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
       />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {error && (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>⚠️ {error}</Text>
+        {/* ── Web Notice Card ─────────────────────────────── */}
+        {Platform.OS === 'web' ? (
+          <View style={styles.webNoticeCard}>
+            <Text style={{ fontSize: 28, marginBottom: 8 }}>📱</Text>
+            <Text style={styles.webNoticeTitle}>Mobile Live Feature</Text>
+            <Text style={styles.webNoticeText}>
+              Live microphone streaming uses native audio capture (Expo Go on iOS / Android).
+              To test real-time intelligence on desktop web, please use <Text style={{ fontWeight: '700', color: colors.primary }}>Upload Audio File</Text> on the Home screen.
+            </Text>
           </View>
+        ) : (
+          <>
+            {error && (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>⚠️ {error}</Text>
+              </View>
+            )}
+
+            {/* ── Connection Loss Banner (Mobile Only) ─────────── */}
+            {connectionState === 'reconnecting' && (
+              <View style={styles.reconnectBanner}>
+                <Animated.View style={[styles.reconnectDot, { opacity: pulseLive }]} />
+                <Text style={styles.reconnectText}>
+                  Connection interrupted — reconnecting automatically…
+                </Text>
+              </View>
+            )}
+            {connectionState === 'disconnected' && (
+              <View style={styles.disconnectBanner}>
+                <Text style={styles.disconnectText}>
+                  ⚠️ Connection lost — please check your network
+                </Text>
+                <Pressable
+                  onPress={() => { startLive().catch(() => {}); }}
+                  style={({ pressed }) => [styles.retryBtn, pressed && { opacity: 0.7 }]}
+                >
+                  <Text style={styles.retryBtnText}>Retry</Text>
+                </Pressable>
+              </View>
+            )}
+          </>
         )}
 
         {/* ── Stats & Connection Status Row ─────────────────── */}
@@ -266,7 +303,9 @@ export const LiveDashboardScreen = ({ onBack }: LiveDashboardScreenProps) => {
                   <View style={styles.soundLeft}>
                     <Text style={{ fontSize: 16 }}>{icon}</Text>
                     <View>
-                      <Text style={styles.soundLabel}>{ev.label}</Text>
+                      <Text style={styles.soundLabel}>
+                        {ev.label === 'Unknown Sound' ? 'Unrecognized Sound' : ev.label}
+                      </Text>
                       <Text style={{ fontSize: 10, color: colors.onSurfaceVariant }}>
                         {ev.category || 'Artificial'} • {Math.round((ev.confidence || 0.8) * 100)}% conf
                       </Text>
@@ -371,7 +410,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     padding: spacing.md,
     alignItems: 'center',
-    justify.content: 'center',
+    justifyContent: 'center',
   },
   statLabel: { ...typography.labelMd, color: colors.onSurfaceVariant, marginBottom: 4, textAlign: 'center' },
   statValue: { ...typography.headlineLg },
@@ -451,4 +490,76 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   distanceText: { fontSize: 10, fontWeight: '700' },
+
+  // Connection loss banners
+  reconnectBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    padding: spacing.md,
+    borderRadius: radius.lg,
+  },
+  reconnectDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#F59E0B',
+  },
+  reconnectText: {
+    ...typography.bodySm,
+    color: '#F59E0B',
+    flex: 1,
+  },
+  disconnectBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    padding: spacing.md,
+    borderRadius: radius.lg,
+  },
+  disconnectText: {
+    ...typography.bodySm,
+    color: colors.error,
+    flex: 1,
+  },
+  retryBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.error,
+    marginLeft: spacing.sm,
+  },
+  retryBtnText: {
+    ...typography.labelMd,
+    color: colors.error,
+  },
+
+  // Web Notice Card
+  webNoticeCard: {
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.25)',
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    alignItems: 'center',
+  },
+  webNoticeTitle: {
+    ...typography.headlineMd,
+    color: colors.onSurface,
+    marginBottom: 6,
+  },
+  webNoticeText: {
+    ...typography.bodySm,
+    color: colors.onSurfaceVariant,
+    textAlign: 'center',
+    lineHeight: 20,
+    maxWidth: 340,
+  },
 });

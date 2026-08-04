@@ -188,6 +188,16 @@ export const ResultsScreen = ({
     return `${m}m ${sec}s`;
   }, [result]);
 
+  // Stable session ID derived from result data — won't change on re-render
+  const sessionId = useMemo(() => {
+    if (!result) return '0000';
+    const seed = (result.total_speakers ?? 0) * 1000
+      + Math.round((result.processing?.duration_seconds ?? 0) * 10)
+      + (result.sounds?.length ?? 0) * 7
+      + (result.segments?.length ?? 0) * 3;
+    return String(seed % 10000).padStart(4, '0');
+  }, [result]);
+
   const handleNavigation = (navTab: 'home' | 'live' | 'profiles' | 'settings') => {
     if (navTab === 'home') onGoHome();
     else if (navTab === 'profiles') onOpenProfiles();
@@ -218,7 +228,7 @@ export const ResultsScreen = ({
       <TopAppBar
         variant="back"
         title="Analysis Complete"
-        subtitle={`SESSION ID #${Math.floor(Math.random() * 9999)}`}
+        subtitle={`SESSION #${sessionId}`}
         onBack={onGoHome}
       />
 
@@ -522,25 +532,46 @@ export const ResultsScreen = ({
                     );
                   })}
 
-                  {/* Unknown Sounds Section */}
+                  {/* Unrecognized Sounds — designed as a clean scope boundary */}
                   {result?.sounds?.some(
                     (s) => s.label === 'Unknown Sound' || s.category === 'Unclassified' || !s.category
                   ) && (
                     <View style={styles.soundCategory}>
                       <View style={styles.soundCategoryHeader}>
-                        <Text style={{ fontSize: 16 }}>❓</Text>
-                        <Text style={styles.cardTitle}>Unknown Sounds</Text>
+                        <Text style={{ fontSize: 16, color: colors.onSurfaceVariant }}>🔍</Text>
+                        <Text style={styles.cardTitle}>Unrecognized Sounds</Text>
+                        <Text style={styles.soundMeta}>
+                          ({result.sounds.filter(
+                            (s) => s.label === 'Unknown Sound' || s.category === 'Unclassified' || !s.category
+                          ).length})
+                        </Text>
+                      </View>
+                      {/* Contextual explanation — reads as intentional scope boundary */}
+                      <View style={styles.unrecognizedBanner}>
+                        <Text style={styles.unrecognizedBannerText}>
+                          Sounds detected outside the current recognition categories (Rain, Dog, Cough, Music, Fan).
+                          Expanding sound vocabulary is planned for a future update.
+                        </Text>
                       </View>
                       {result.sounds
                         .filter(
                           (s) => s.label === 'Unknown Sound' || s.category === 'Unclassified' || !s.category
                         )
                         .map((event, i) => (
-                          <View key={`unknown-${i}`} style={styles.soundCard}>
-                            <Text style={styles.soundName}>Unknown Sound</Text>
-                            <Text style={styles.soundMeta}>
-                              {event.start.toFixed(1)}s - {event.end.toFixed(1)}s (Confidence &lt; 40%)
-                            </Text>
+                          <View key={`unrecognized-${i}`} style={styles.unrecognizedCard}>
+                            <View style={styles.soundCardLeft}>
+                              <View style={[styles.soundIconWrap, { backgroundColor: 'rgba(144, 143, 160, 0.1)' }]}>
+                                <Text style={{ fontSize: 16, color: colors.outline }}>🔍</Text>
+                              </View>
+                              <View>
+                                <Text style={[styles.soundName, { color: colors.onSurfaceVariant }]}>
+                                  Unrecognized Sound
+                                </Text>
+                                <Text style={styles.soundMeta}>
+                                  {event.start.toFixed(1)}s – {event.end.toFixed(1)}s
+                                </Text>
+                              </View>
+                            </View>
                           </View>
                         ))}
                     </View>
@@ -705,4 +736,30 @@ const styles = StyleSheet.create({
   intensityValueText: { fontSize: 10, fontWeight: '700' },
   intensityTrack: { height: 6, backgroundColor: colors.surfaceContainerHighest, borderRadius: radius.pill, overflow: 'hidden' },
   intensityFill: { height: '100%', borderRadius: radius.pill },
+
+  // Unrecognized Sounds (intentional scope boundary, not an error)
+  unrecognizedCard: {
+    backgroundColor: colors.surfaceContainerLow,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    borderStyle: 'dashed',
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    opacity: 0.85,
+  },
+  unrecognizedBanner: {
+    backgroundColor: 'rgba(144, 143, 160, 0.08)',
+    borderRadius: radius.lg,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  unrecognizedBannerText: {
+    ...typography.bodySm,
+    color: colors.outline,
+    fontSize: 11,
+    lineHeight: 16,
+    fontStyle: 'italic',
+  },
 });

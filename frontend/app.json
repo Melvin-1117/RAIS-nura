@@ -1,10 +1,29 @@
 {
   "expo": {
-    "name": "Audio Intelligence",
-    "slug": "audio-intelligence",
+    "name": "NURA Audio Intelligence",
+    "slug": "nura-audio-intelligence",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "nura-audio",
+    "backgroundColor": "#09090B",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#09090B"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "backgroundColor": "#09090B"
+    },
+    "android": {
+      "backgroundColor": "#09090B",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#09090B"
+      }
+    },
     "assetBundlePatterns": [
       "**/*"
     ]

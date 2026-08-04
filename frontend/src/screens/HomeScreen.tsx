@@ -215,21 +215,26 @@ export const HomeScreen = ({
           </Pressable>
         </Animated.View>
 
-        {/* ── Recent Insights ──────────────────────────── */}
+        {/* ── How It Works ────────────────────────────── */}
         <Animated.View style={[styles.recentSection, { opacity: fadeRecent }]}>
-          <Text style={styles.recentSectionTitle}>Recent Insights</Text>
-          <GlassPanel style={styles.recentCard}>
-            <View style={styles.recentLeft}>
-              <View style={styles.recentIconWrap}>
-                <Text style={styles.recentIcon}>🕒</Text>
+          <Text style={styles.recentSectionTitle}>How It Works</Text>
+          {[
+            { step: '1', icon: '📁', title: 'Upload or Record', desc: 'Pick an audio file or start a live session' },
+            { step: '2', icon: '⚙️', title: 'AI Analysis', desc: 'Speaker diarization, transcription & sound classification' },
+            { step: '3', icon: '📊', title: 'View Results', desc: 'Explore who spoke, what was said, and what sounds were detected' },
+          ].map((item) => (
+            <GlassPanel key={item.step} style={styles.howItWorksCard}>
+              <View style={styles.howItWorksLeft}>
+                <View style={styles.howItWorksStep}>
+                  <Text style={styles.howItWorksStepText}>{item.step}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.howItWorksTitle}>{item.icon} {item.title}</Text>
+                  <Text style={styles.howItWorksDesc}>{item.desc}</Text>
+                </View>
               </View>
-              <View>
-                <Text style={styles.recentName}>Weekly Sync Meeting</Text>
-                <Text style={styles.recentMeta}>24 Oct • 4 Speakers identified</Text>
-              </View>
-            </View>
-            <Text style={styles.recentArrow}>›</Text>
-          </GlassPanel>
+            </GlassPanel>
+          ))}
         </Animated.View>
       </ScrollView>
 
@@ -391,26 +396,26 @@ const styles = StyleSheet.create({
   },
   liveDotInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.error },
 
-  // ── Recent ────────────────────────────────────────────────
-  recentSection: { marginVertical: 16 },
-  recentSectionTitle: { color: colors.white, ...typography.headlineMd, fontSize: 16, marginBottom: 12 },
-  recentCard: {
+  // ── How It Works ───────────────────────────────────────────
+  recentSection: { marginVertical: 16, gap: 8 },
+  recentSectionTitle: { color: colors.white, ...typography.headlineMd, fontSize: 16, marginBottom: 4 },
+  howItWorksCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
+    padding: 14,
   },
-  recentLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  recentIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: colors.surfaceContainer,
+  howItWorksLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
+  howItWorksStep: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.25)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  recentIcon: { fontSize: 18 },
-  recentName: { color: colors.onSurface, ...typography.bodySm, fontWeight: '600' },
-  recentMeta: { color: colors.outline, fontSize: 10, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
-  recentArrow: { color: colors.onSurfaceVariant, fontSize: 20 },
+  howItWorksStepText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
+  howItWorksTitle: { color: colors.onSurface, ...typography.bodySm, fontWeight: '600' },
+  howItWorksDesc: { color: colors.outline, fontSize: 11, marginTop: 2 },
 });

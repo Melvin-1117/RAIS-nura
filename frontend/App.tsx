@@ -55,7 +55,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="light-content" backgroundColor="#09090B" />
       {screen === 'home' && (
         <HomeScreen
           onStartProcess={startProcessing}

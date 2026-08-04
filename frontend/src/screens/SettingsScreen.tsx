@@ -26,6 +26,7 @@ export const SettingsScreen = ({ initialSettings, onSave, onBack }: SettingsScre
   const [speakerThreshold, setSpeakerThreshold] = useState(initialSettings.speakerMatchThreshold);
   const [chunkSize, setChunkSize] = useState(initialSettings.chunkSizeSeconds);
   const [inputFocused, setInputFocused] = useState(false);
+  const [showArchInfo, setShowArchInfo] = useState(false);
   // Dynamic model label fetched from backend /health so it always reflects
   // the real configured model (e.g. distil-whisper/distil-small.en) rather
   // than a hardcoded string that drifts as the model changes.
@@ -37,7 +38,7 @@ export const SettingsScreen = ({ initialSettings, onSave, onBack }: SettingsScre
       if (!raw) return;
       const parsed = JSON.parse(raw) as AppSettings;
       const migratedApiBaseUrl =
-        parsed.apiBaseUrl === 'http://localhost:8000' ||
+        parsed.apiBaseUrl === 'http://localhost:8003' ||
         parsed.apiBaseUrl === 'http://localhost:8001' ||
         parsed.apiBaseUrl === 'http://localhost:8002'
           ? FIXED_API_BASE_URL
@@ -217,13 +218,45 @@ export const SettingsScreen = ({ initialSettings, onSave, onBack }: SettingsScre
               <Text style={styles.aboutLabel}>Version</Text>
               <Text style={styles.aboutValue}>1.0.0</Text>
             </View>
-            <View style={[styles.aboutRow, { borderBottomWidth: 0 }]}>
+            <View style={styles.aboutRow}>
               <Text style={styles.aboutLabel}>Model</Text>
               <View style={styles.modelBadge}>
                 <Text style={styles.modelText}>{asrModelLabel}</Text>
                 <Text style={{ fontSize: 12, color: colors.primary }}>✓</Text>
               </View>
             </View>
+            <Pressable
+              onPress={() => setShowArchInfo(!showArchInfo)}
+              style={[styles.aboutRow, { borderBottomWidth: showArchInfo ? 1 : 0 }]}
+            >
+              <Text style={styles.aboutLabel}>Architecture</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={[styles.aboutValue, { color: colors.tertiary }]}>100% Local</Text>
+                <Text style={{ color: colors.outline, fontSize: 12 }}>{showArchInfo ? '▾' : '▸'}</Text>
+              </View>
+            </Pressable>
+            {showArchInfo && (
+              <View style={styles.archGrid}>
+                {[
+                  { id: 'M1', name: 'Speaker Count' },
+                  { id: 'M2', name: 'Transcription' },
+                  { id: 'M3', name: 'Speaker Recognition' },
+                  { id: 'M4', name: 'Sound Separation' },
+                  { id: 'M5', name: 'Sound Categorization' },
+                  { id: 'M6', name: 'Distance Estimation' },
+                  { id: 'M7', name: 'Intensity Analysis' },
+                  { id: 'M8', name: 'Real-Time Streaming' },
+                ].map((m) => (
+                  <View key={m.id} style={styles.archItem}>
+                    <Text style={styles.archId}>{m.id}</Text>
+                    <Text style={styles.archName}>{m.name}</Text>
+                  </View>
+                ))}
+                <Text style={styles.archFooter}>
+                  No cloud API keys required. All processing runs on-device via local models.
+                </Text>
+              </View>
+            )}
           </GlassPanel>
         </View>
 
@@ -340,4 +373,43 @@ const styles = StyleSheet.create({
   saveBtn: { borderRadius: radius.pill, overflow: 'hidden', height: 56, marginTop: 8 },
   saveBtnInner: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   saveBtnText: { color: colors.white, ...typography.headlineMd, fontSize: 16 },
+
+  // Architecture info
+  archGrid: {
+    padding: spacing.md,
+    paddingTop: 0,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  archItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.15)',
+  },
+  archId: {
+    ...typography.labelMd,
+    color: colors.primary,
+    fontWeight: '800',
+    fontSize: 10,
+  },
+  archName: {
+    ...typography.bodySm,
+    color: colors.onSurfaceVariant,
+    fontSize: 11,
+  },
+  archFooter: {
+    ...typography.bodySm,
+    color: colors.outline,
+    fontSize: 10,
+    fontStyle: 'italic',
+    marginTop: 4,
+    width: '100%',
+  },
 });
