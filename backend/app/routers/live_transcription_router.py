@@ -79,7 +79,14 @@ def _process_audio_chunk(
             output = asr(
                 tmp_path,
                 return_timestamps=False,
-                generate_kwargs={"task": "transcribe"},
+                generate_kwargs={
+                    "task": "transcribe",
+                    "language": "en",
+                    "temperature": 0.0,
+                    "no_speech_threshold": 0.6,
+                    "logprob_threshold": -1.0,
+                    "compression_ratio_threshold": 2.4,
+                },
             )
             text = str(output.get("text") or "").strip()
         except Exception as asr_err:
@@ -93,8 +100,8 @@ def _process_audio_chunk(
                     pass
 
         # 2. Lightweight Speaker Activity
-        active_speakers = _detect_speaker_activity(pcm_float32) if text else []
-        if not active_speakers and chunk_rms > 0.03:
+        active_speakers = _detect_speaker_activity(pcm_float32)
+        if not active_speakers and chunk_rms > 0.02:
             active_speakers = ["Speaker A"]
 
         # 3. Direct Raw-Chunk Sound Categorization

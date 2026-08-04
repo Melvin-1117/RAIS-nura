@@ -330,3 +330,54 @@ def match_speakers(
 
     return result
 
+
+def match_speaker_from_samples(pcm_float32: Any, sr: int = 16000, threshold: float = 0.80) -> Any:
+    """
+    Extracts embedding from raw PCM float32 samples and matches against enrolled speaker profiles.
+    Used for real-time live speaker identification.
+    """
+    try:
+        import numpy as np
+        if isinstance(pcm_float32, np.ndarray):
+            waveform = torch.from_numpy(pcm_float32).unsqueeze(0)
+        else:
+            waveform = torch.tensor(pcm_float32).unsqueeze(0)
+            
+        if waveform.numel() == 0:
+            return None
+
+        # Extract features (MFCC)
+        mfcc = torchaudio.transforms.MFCC(
+            sample_rate=sr,
+            n_mfcc=40,
+            melkwargs={"n_fft": min(1024, waveform.shape[1]), "hop_length": 256, "n_mels": 64},
+        )(waveform)
+
+        mean_vec = mfcc.mean(dim=2).squeeze(0)
+        std_vec = mfcc.std(dim=2).squeeze(0)
+        feature = torch.cat([mean_vec, std_vec], dim=0)
+        feature = _l2_normalize(feature).to(torch.float32)
+
+        profiles = _load_profiles()
+        if not profiles:
+            return None
+
+        best_sim = -1.0
+        best_name = None
+
+        for profile in profiles:
+            emb = profile.get("embedding") or []
+            if not emb:
+                continue
+            sim = _cosine_similarity(feature, torch.tensor(emb, dtype=torch.float32))
+            if sim > best_sim:
+                best_sim = sim
+                best_name = str(profile.get("name", "Unknown"))
+
+        if best_sim >= threshold:
+            return best_name
+    except Exception as exc:
+        print(f"[match_speaker_from_samples error] {exc}")
+        
+    return None
+

@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import { getDefaultApiBaseUrl } from '../utils/network';
 
 const getBackendUrl = (apiBaseUrl?: string): string => {

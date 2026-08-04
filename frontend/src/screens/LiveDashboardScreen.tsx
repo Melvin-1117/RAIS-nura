@@ -3,7 +3,7 @@ import { Animated, Platform, Pressable, ScrollView, StyleSheet, Text, View } fro
 
 import { TopAppBar } from '../components/TopAppBar';
 import { WaveformPlaceholder } from '../components/WaveformPlaceholder';
-import { colors, radius, spacing, typography } from '../constants/theme';
+import { colors, getSpeakerColor, radius, spacing, typography } from '../constants/theme';
 import { useTranscription } from '../hooks/useTranscription';
 
 type LiveDashboardScreenProps = {
@@ -99,11 +99,18 @@ export const LiveDashboardScreen = ({ apiBaseUrl, onBack }: LiveDashboardScreenP
   const formattedEntries: LiveEntry[] = transcript.map((item) => {
     const date = new Date(item.startTime * 1000);
     const timeStr = `${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
-    const speakerKey = item.speaker ? (item.speaker.startsWith('Speaker') ? item.speaker : `Speaker ${item.speaker}`) : 'Speaker A';
-    const color = speakerColors[speakerKey] || colors.primary;
+    
+    let displaySpeaker = item.speaker || 'Speaker A';
+    if (displaySpeaker === 'A' || displaySpeaker === 'Speaker A') {
+      displaySpeaker = 'Speaker A';
+    } else if (displaySpeaker === 'B' || displaySpeaker === 'Speaker B') {
+      displaySpeaker = 'Speaker B';
+    }
+    
+    const color = getSpeakerColor(displaySpeaker);
 
     return {
-      speaker: speakerKey,
+      speaker: displaySpeaker,
       text: item.text,
       at: timeStr,
       color,
@@ -117,7 +124,11 @@ export const LiveDashboardScreen = ({ apiBaseUrl, onBack }: LiveDashboardScreenP
 
   // 👥 Active Speakers panel data
   const activeSpeakersList = latestPayload?.active_speakers && latestPayload.active_speakers.length > 0
-    ? latestPayload.active_speakers
+    ? latestPayload.active_speakers.map(s => {
+        if (s === 'A' || s === 'Speaker A') return 'Speaker A';
+        if (s === 'B' || s === 'Speaker B') return 'Speaker B';
+        return s;
+      })
     : ['Speaker A'];
 
   // 🔊 Background Sounds & 📍 Distance Map panel data
@@ -265,7 +276,7 @@ export const LiveDashboardScreen = ({ apiBaseUrl, onBack }: LiveDashboardScreenP
           </View>
           <View style={styles.speakerRow}>
             {activeSpeakersList.map((spk) => {
-              const spkColor = speakerColors[spk] || colors.primary;
+              const spkColor = getSpeakerColor(spk);
               return (
                 <View key={spk} style={[styles.activeSpeakerPill, { borderColor: `${spkColor}50` }]}>
                   <Animated.View style={[styles.speakerPulseDot, { backgroundColor: spkColor, opacity: pulseLive }]} />
