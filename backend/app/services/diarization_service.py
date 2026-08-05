@@ -33,6 +33,22 @@ _pipeline = None
 _local_asr_pipeline = None
 _faster_whisper_model = None
 
+# Live session counter: prevents _maybe_release_models() from nuking the ASR
+# pipeline while a WebSocket live session is actively processing chunks.
+_live_session_count = 0
+
+
+def increment_live_sessions() -> None:
+    global _live_session_count
+    _live_session_count += 1
+    print(f"[Live Session] Active sessions: {_live_session_count}")
+
+
+def decrement_live_sessions() -> None:
+    global _live_session_count
+    _live_session_count = max(0, _live_session_count - 1)
+    print(f"[Live Session] Active sessions: {_live_session_count}")
+
 # Keep CPU memory/threads predictable on developer machines.
 try:
     torch.set_num_threads(max(1, int(settings.torch_num_threads)))
@@ -47,9 +63,18 @@ def _maybe_release_models() -> None:
     if not settings.release_models_after_request:
         return
 
+    # Always safe to release the diarization pipeline and faster-whisper
     _pipeline = None
-    _local_asr_pipeline = None
     _faster_whisper_model = None
+
+    # Protect the ASR pipeline while live WebSocket sessions are active.
+    # Without this guard, a batch /api/diarize request completing mid-live-session
+    # would set _local_asr_pipeline = None, forcing a 30-60s cold reload on the
+    # next live chunk — which is the root cause of "no response" on live start.
+    if _live_session_count > 0:
+        print(f"[Model Release] Skipping ASR pipeline release — {_live_session_count} live session(s) active")
+    else:
+        _local_asr_pipeline = None
 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -412,21 +437,30 @@ def _get_local_asr_pipeline():
         raise RuntimeError("Local ASR fallback is disabled by low-memory configuration.")
 
     if _local_asr_pipeline is None:
+        print(f"[ASR Pipeline] Loading model '{settings.local_asr_model}' (this may take a while on first load)...")
         try:
             from transformers import pipeline
         except Exception as exc:
+            print(f"[ASR Pipeline] FATAL: Cannot import transformers: {exc}")
             raise RuntimeError(
                 "Local Whisper fallback is unavailable. Install transformers in backend env."
             ) from exc
 
-        device = 0 if torch.cuda.is_available() else -1
-        torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-        _local_asr_pipeline = pipeline(
-            task="automatic-speech-recognition",
-            model=settings.local_asr_model,
-            device=device,
-            torch_dtype=torch_dtype,
-        )
+        try:
+            device = 0 if torch.cuda.is_available() else -1
+            torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+            _local_asr_pipeline = pipeline(
+                task="automatic-speech-recognition",
+                model=settings.local_asr_model,
+                device=device,
+                torch_dtype=torch_dtype,
+            )
+            print(f"[ASR Pipeline] Model '{settings.local_asr_model}' loaded successfully (device={'cuda' if device == 0 else 'cpu'})")
+        except Exception as exc:
+            import traceback
+            print(f"[ASR Pipeline] FATAL: Model load failed: {exc}")
+            traceback.print_exc()
+            raise
 
     return _local_asr_pipeline
 

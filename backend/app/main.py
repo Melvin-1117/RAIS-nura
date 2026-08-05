@@ -38,6 +38,18 @@ async def log_runtime_configuration() -> None:
     print(f"Local ASR chunk seconds: {settings.local_asr_chunk_length_seconds}")
     print("====================================\n")
 
+    # Pre-warm the local ASR pipeline at startup so the first live session
+    # doesn't hang for 30-60s while the model downloads/loads lazily.
+    if settings.enable_local_asr_fallback:
+        print("[Startup] Pre-warming local ASR pipeline...")
+        try:
+            from app.services.diarization_service import _get_local_asr_pipeline
+            _get_local_asr_pipeline()
+            print("[Startup] ASR pipeline warm-up complete ✓")
+        except Exception as exc:
+            print(f"[Startup] ASR pipeline warm-up failed (non-fatal): {exc}")
+            print("[Startup] Live transcription will attempt lazy load on first use.")
+
 
 @app.get("/")
 async def root() -> dict:

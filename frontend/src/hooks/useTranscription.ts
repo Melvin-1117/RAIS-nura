@@ -153,7 +153,36 @@ export const useTranscription = (apiBaseUrl?: string) => {
           continue;
         }
 
-        liveClientRef.current?.sendChunk(bytes);
+        // Strip WAV header if present — the recorder produces .wav files with
+        // a 44+ byte RIFF header, but the backend expects raw PCM int16 data.
+        let pcmBytes = bytes;
+        if (
+          bytes.length >= 44 &&
+          bytes[0] === 0x52 && // 'R'
+          bytes[1] === 0x49 && // 'I'
+          bytes[2] === 0x46 && // 'F'
+          bytes[3] === 0x46    // 'F'
+        ) {
+          // Find the 'data' sub-chunk marker
+          let dataOffset = 44; // default fallback
+          for (let i = 12; i < Math.min(bytes.length - 8, 200); i++) {
+            if (
+              bytes[i] === 0x64 &&     // 'd'
+              bytes[i + 1] === 0x61 && // 'a'
+              bytes[i + 2] === 0x74 && // 't'
+              bytes[i + 3] === 0x61    // 'a'
+            ) {
+              dataOffset = i + 8; // skip 'data' (4) + chunk-size (4)
+              break;
+            }
+          }
+          pcmBytes = bytes.slice(dataOffset);
+        }
+
+        console.log(
+          `[Live Chunk] Sending ${pcmBytes.byteLength} PCM bytes (was ${bytes.byteLength} raw, energy=${energy.toFixed(4)})`
+        );
+        liveClientRef.current?.sendChunk(pcmBytes);
       } catch (err: any) {
         setError(err?.message || 'Live chunk capture failed');
       }
