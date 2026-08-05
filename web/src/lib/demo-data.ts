@@ -30,6 +30,8 @@ export interface DemoSoundEvent {
   distance: "Near" | "Mid" | "Far";
   intensity: "Low" | "Medium" | "High";
   confidence: number;
+  intensity_pct?: number;
+  distance_score?: number;
 }
 
 export interface DemoResult {
