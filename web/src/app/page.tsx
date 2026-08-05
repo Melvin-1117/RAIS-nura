@@ -138,8 +138,35 @@ export default function HomePage() {
               Upload an audio file or explore demo results to analyze speakers, transcripts, background sounds, spatial distance, and intensity.
             </p>
 
-            {/* Workspace: Demo + Uploader */}
+            {/* Workspace: Live + Demo + Uploader */}
             <div className="animate-fade-in-up delay-400 max-w-2xl mx-auto space-y-4 text-left">
+              {/* Quick Action: Start Live Listening */}
+              <div className="glass-panel p-5 flex items-center justify-between gap-4 border border-[var(--color-primary)]/20 hover:border-[var(--color-primary)]/40 transition-all">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-[var(--color-primary)]/10 flex items-center justify-center shrink-0 relative">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#ffb4ab] absolute top-1 right-1 animate-pulse" />
+                    <span className="text-lg">🎙️</span>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                      Start Live Listening
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#ffb4ab]/10 text-[#ffb4ab] border border-[#ffb4ab]/20 uppercase">
+                        Real-Time
+                      </span>
+                    </h3>
+                    <p className="text-xs text-[var(--color-on-surface-variant)]">
+                      Stream browser mic audio to analyze speakers and sounds live (under 500ms)
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => router.push("/live")}
+                  className="btn-primary shrink-0 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] hover:opacity-90 font-medium"
+                >
+                  Listen Live →
+                </button>
+              </div>
+
               {/* Quick Action: Try Demo */}
               <div className="glass-panel p-5 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3.5">
