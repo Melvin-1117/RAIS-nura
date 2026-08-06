@@ -3,6 +3,19 @@ import sys
 import uvicorn
 import gradio as gr
 
+# Hugging Face ZeroGPU initialization
+try:
+    import spaces
+
+    @spaces.GPU
+    def _zerogpu_init():
+        """Register Hugging Face ZeroGPU runtime handler."""
+        return True
+
+    print("[Hugging Face ZeroGPU] ZeroGPU initialized successfully.")
+except Exception:
+    print("[Hugging Face ZeroGPU] 'spaces' module not loaded (running locally/CPU).")
+
 # Add the backend folder to the python path so imports inside "backend/app/" work correctly
 backend_dir = os.path.join(os.path.dirname(__file__), "backend")
 sys.path.insert(0, backend_dir)
