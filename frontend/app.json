@@ -22,10 +22,17 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#09090B"
-      }
+      },
+      "package": "com.melvin1117.nuraaudiointelligence"
     },
     "assetBundlePatterns": [
       "**/*"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "df6279ca-65d9-40eb-af80-ccd9e7c6dc2b"
+      }
+    },
+    "owner": "melvin1117"
   }
 }

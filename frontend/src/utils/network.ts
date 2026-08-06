@@ -2,7 +2,7 @@ import Constants from 'expo-constants';
 import { NativeModules, Platform } from 'react-native';
 
 const DEFAULT_API_PORT = '8000';
-const FALLBACK_API_BASE_URL = `http://10.0.2.2:${DEFAULT_API_PORT}`;
+const FALLBACK_API_BASE_URL = 'https://melvin1117-audio-intel-backend.hf.space';
 
 export const parseUrl = (urlStr: string): { protocol: string; hostname: string; port: string } => {
   try {
