@@ -51,3 +51,14 @@ web/out/
 .cache/
 tmp/
 temp/
+
+# Binary files & audio output
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.pptx
+*.png
+backend/separation/jobs/
+sample/
+
